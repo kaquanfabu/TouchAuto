@@ -1,4 +1,6 @@
 #import "FloatingPanel.h"
+#import "TouchPlayer.h"
+#import "TouchRecorder.h"
 
 @interface FloatingPanel ()
 
@@ -787,32 +789,6 @@
         }
     }
     return nil;
-}
-
-- (UIWindow *)getKeyWindow {
-    UIWindow *keyWindow = nil;
-    
-    if (@available(iOS 13.0, *)) {
-        NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
-        for (UIScene *scene in scenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                UIWindowScene *windowScene = (UIWindowScene *)scene;
-                for (UIWindow *window in windowScene.windows) {
-                    if (window.isKeyWindow) {
-                        keyWindow = window;
-                        break;
-                    }
-                }
-                if (keyWindow) break;
-            }
-        }
-    }
-    
-    if (!keyWindow) {
-        keyWindow = [UIApplication sharedApplication].keyWindow;
-    }
-    
-    return keyWindow;
 }
 
 - (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {

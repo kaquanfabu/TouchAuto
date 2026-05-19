@@ -32,8 +32,8 @@
                 _type = TouchEventTypeBegan;
         }
         
-        if (event) {
-            _bounds = event.window.bounds;
+        if (touch.window) {
+            _bounds = touch.window.bounds;
         }
     }
     return self;

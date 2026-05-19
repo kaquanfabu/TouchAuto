@@ -7,8 +7,8 @@
 @property (nonatomic, assign) BOOL isPaused;
 @property (nonatomic, strong) NSArray<TouchEvent *> *events;
 @property (nonatomic, assign) NSUInteger currentIndex;
-@property (nonatomic, assign) NSUInteger loopCount;
-@property (nonatomic, assign) NSUInteger currentLoop;
+@property (nonatomic, assign, readwrite) NSUInteger loopCount;
+@property (nonatomic, assign, readwrite) NSUInteger currentLoop;
 @property (nonatomic, assign) BOOL infiniteLoop;
 @property (nonatomic, strong) dispatch_queue_t playbackQueue;
 @property (nonatomic, strong) dispatch_source_t timerSource;
@@ -205,42 +205,63 @@
     
     SEL initSel = NSSelectorFromString(@"_initWithView:location:");
     if ([touch respondsToSelector:initSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         touch = [touch performSelector:initSel withObject:window withObject:[NSValue valueWithCGPoint:location]];
+#pragma clang diagnostic pop
     } else {
         touch = [touch init];
     }
     
     SEL setPhaseSel = NSSelectorFromString(@"setPhase:");
     if ([touch respondsToSelector:setPhaseSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setPhaseSel withObject:@(phase)];
+#pragma clang diagnostic pop
     }
     
     SEL setLocationInWindowSel = NSSelectorFromString(@"_setLocationInWindow:");
     if ([touch respondsToSelector:setLocationInWindowSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setLocationInWindowSel withObject:[NSValue valueWithCGPoint:location]];
+#pragma clang diagnostic pop
     }
     
     SEL setWindowSel = NSSelectorFromString(@"setWindow:");
     if ([touch respondsToSelector:setWindowSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setWindowSel withObject:window];
+#pragma clang diagnostic pop
     }
     
     UIEvent *event = [UIEventClass alloc];
     SEL eventInitSel = NSSelectorFromString(@"_initWithEventSubtype:timestamp:");
     if ([event respondsToSelector:eventInitSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         event = [event performSelector:eventInitSel withObject:@(UIEventSubtypeNone) withObject:@([[NSDate date] timeIntervalSince1970])];
+#pragma clang diagnostic pop
     } else {
         event = [event init];
     }
     
     SEL setTouchesSel = NSSelectorFromString(@"_setTouches:");
     if ([event respondsToSelector:setTouchesSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [event performSelector:setTouchesSel withObject:@[touch]];
+#pragma clang diagnostic pop
     }
     
     SEL setWindowSel2 = NSSelectorFromString(@"_setWindow:");
     if ([event respondsToSelector:setWindowSel2]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [event performSelector:setWindowSel2 withObject:window];
+#pragma clang diagnostic pop
     }
     
     SEL sendEventSel = @selector(sendEvent:);

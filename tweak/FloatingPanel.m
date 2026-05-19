@@ -82,7 +82,7 @@
     _toggleButton.frame = CGRectMake(0, 0, 60, 60);
     _toggleButton.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
     _toggleButton.layer.cornerRadius = 10;
-    _toggleButton.setTitleColor([UIColor whiteColor], forState:UIControlStateNormal);
+    [_toggleButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     _toggleButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
     [_toggleButton setTitle:@"工具" forState:UIControlStateNormal];
     [_toggleButton addTarget:self action:@selector(toggleButtonTapped) forControlEvents:UIControlEventTouchUpInside];

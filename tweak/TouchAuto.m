@@ -8,12 +8,9 @@
 
 static BOOL gIsAppReady = NO;
 static Class gUIWindowClass = nil;
-static Class gUIApplicationClass = nil;
 static IMP gOriginalSendEvent = NULL;
-static IMP gOriginalApplicationDidBecomeActive = NULL;
 
 static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
-static void swizzledApplicationDidBecomeActive(id self, SEL _cmd, UIApplication *application);
 
 @interface TouchAuto : NSObject
 
@@ -37,7 +34,6 @@ static void swizzledApplicationDidBecomeActive(id self, SEL _cmd, UIApplication 
 
 + (void)swizzleMethods {
     gUIWindowClass = objc_getClass("UIWindow");
-    gUIApplicationClass = objc_getClass("UIApplication");
     
     if (gUIWindowClass) {
         Method sendEventMethod = class_getInstanceMethod(gUIWindowClass, @selector(sendEvent:));
@@ -46,12 +42,10 @@ static void swizzledApplicationDidBecomeActive(id self, SEL _cmd, UIApplication 
         }
     }
     
-    if (gUIApplicationClass) {
-        Method didBecomeActiveMethod = class_getInstanceMethod(gUIApplicationClass, @selector(applicationDidBecomeActive:));
-        if (didBecomeActiveMethod) {
-            gOriginalApplicationDidBecomeActive = method_setImplementation(didBecomeActiveMethod, (IMP)swizzledApplicationDidBecomeActive);
-        }
-    }
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(handleApplicationDidBecomeActive:) 
+                                                 name:UIApplicationDidBecomeActiveNotification 
+                                               object:nil];
 }
 
 + (void)setup {
@@ -275,6 +269,10 @@ static void swizzledApplicationDidBecomeActive(id self, SEL _cmd, UIApplication 
     [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
 }
 
++ (void)handleApplicationDidBecomeActive:(NSNotification *)notification {
+    [TouchAuto setup];
+}
+
 @end
 
 static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event) {
@@ -292,12 +290,4 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event) {
         TouchEvent *touchEvent = [[TouchEvent alloc] initWithTouch:touch event:event];
         [recorder recordEvent:touchEvent];
     }
-}
-
-static void swizzledApplicationDidBecomeActive(id self, SEL _cmd, UIApplication *application) {
-    if (gOriginalApplicationDidBecomeActive) {
-        ((void (*)(id, SEL, UIApplication *))gOriginalApplicationDidBecomeActive)(self, _cmd, application);
-    }
-    
-    [TouchAuto setup];
 }

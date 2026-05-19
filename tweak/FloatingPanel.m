@@ -47,7 +47,8 @@
 }
 
 - (void)setupPanel {
-    _contentView = [[UIView alloc] initWithFrame:CGRectMake(20, 200, 60, 240)];
+    _contentView = [[UIView alloc] initWithFrame:CGRectZero];
+    _contentView.translatesAutoresizingMaskIntoConstraints = NO;
     _contentView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:_opacity];
     _contentView.layer.cornerRadius = _cornerRadius;
     _contentView.clipsToBounds = YES;

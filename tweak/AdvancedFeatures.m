@@ -33,14 +33,17 @@
 }
 
 - (void)scheduleTaskAfterDelay:(NSTimeInterval)delay block:(ScheduledTaskBlock)block {
-    dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC));
-    dispatch_after(popTime, dispatch_get_main_queue(), ^{
-        _isScheduledTaskRunning = YES;
+    __weak __typeof(self) weakSelf = self;
+    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:delay repeats:NO block:^(NSTimer *timer) {
+        __strong __typeof(weakSelf) strongSelf = weakSelf;
+        strongSelf->_isScheduledTaskRunning = YES;
         if (block) {
             block();
         }
-        _isScheduledTaskRunning = NO;
-    });
+        strongSelf->_isScheduledTaskRunning = NO;
+        [strongSelf->_scheduledTimers removeObject:timer];
+    }];
+    [_scheduledTimers addObject:timer];
 }
 
 - (void)cancelAllScheduledTasks {

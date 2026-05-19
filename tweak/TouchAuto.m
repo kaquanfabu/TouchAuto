@@ -25,10 +25,6 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         [self swizzleMethods];
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            [self setup];
-        });
     });
 }
 
@@ -270,7 +266,9 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
 }
 
 + (void)handleApplicationDidBecomeActive:(NSNotification *)notification {
-    [TouchAuto setup];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [TouchAuto setup];
+    });
 }
 
 @end

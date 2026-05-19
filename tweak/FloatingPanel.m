@@ -3,6 +3,7 @@
 @interface FloatingPanel ()
 
 @property (nonatomic, strong) UIView *contentView;
+@property (nonatomic, strong) UIButton *toggleButton;
 @property (nonatomic, strong) UIButton *recordButton;
 @property (nonatomic, strong) UIButton *playButton;
 @property (nonatomic, strong) UIButton *pauseButton;
@@ -16,8 +17,12 @@
 @property (nonatomic, assign) CGPoint initialTouchPoint;
 @property (nonatomic, assign) CGPoint initialPanelCenter;
 @property (nonatomic, strong) NSTimer *autoHideTimer;
+@property (nonatomic, strong) NSTimer *checkVisibilityTimer;
 @property (nonatomic, assign) BOOL isRecording;
 @property (nonatomic, assign) BOOL isPlaying;
+@property (nonatomic, assign) BOOL isExpanded;
+@property (nonatomic, strong) NSLayoutConstraint *contentViewWidthConstraint;
+@property (nonatomic, strong) NSLayoutConstraint *contentViewHeightConstraint;
 
 @end
 
@@ -28,20 +33,22 @@
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         instance = [[FloatingPanel alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, [UIScreen mainScreen].bounds.size.height)];
+        instance.backgroundColor = [UIColor clearColor];
+        instance.userInteractionEnabled = YES;
     });
     return instance;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (self = [super initWithFrame:frame]) {
-        self.windowLevel = UIWindowLevelAlert + 1;
-        self.backgroundColor = [UIColor clearColor];
-        self.hidden = YES;
-        _opacity = 0.8;
+        _opacity = 0.9;
         _cornerRadius = 12;
         _autoHideEnabled = YES;
-        _autoHideDelay = 5.0;
+        _autoHideDelay = 8.0;
+        _isExpanded = NO;
+        _isVisible = NO;
         [self setupPanel];
+        [self setupNotifications];
     }
     return self;
 }
@@ -49,40 +56,58 @@
 - (void)setupPanel {
     _contentView = [[UIView alloc] initWithFrame:CGRectZero];
     _contentView.translatesAutoresizingMaskIntoConstraints = NO;
-    _contentView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:_opacity];
+    _contentView.backgroundColor = [UIColor colorWithRed:0.1 green:0.1 blue:0.1 alpha:_opacity];
     _contentView.layer.cornerRadius = _cornerRadius;
     _contentView.clipsToBounds = YES;
     _contentView.layer.shadowColor = [UIColor blackColor].CGColor;
-    _contentView.layer.shadowOffset = CGSizeMake(0, 2);
-    _contentView.layer.shadowOpacity = 0.5;
-    _contentView.layer.shadowRadius = 4;
+    _contentView.layer.shadowOffset = CGSizeMake(0, 3);
+    _contentView.layer.shadowOpacity = 0.6;
+    _contentView.layer.shadowRadius = 6;
+    _contentView.layer.borderWidth = 1;
+    _contentView.layer.borderColor = [UIColor colorWithRed:0.3 green:0.3 blue:0.3 alpha:0.5].CGColor;
     
     UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
     [_contentView addGestureRecognizer:panGesture];
     
     [self addSubview:_contentView];
     
-    CGFloat panelWidth = 60;
-    [_contentView.widthAnchor constraintEqualToConstant:panelWidth].active = YES;
+    _contentViewWidthConstraint = [_contentView.widthAnchor constraintEqualToConstant:60];
+    _contentViewHeightConstraint = [_contentView.heightAnchor constraintEqualToConstant:60];
+    _contentViewWidthConstraint.active = YES;
+    _contentViewHeightConstraint.active = YES;
+    [_contentView.centerXAnchor constraintEqualToAnchor:self.centerXAnchor].active = YES;
+    [_contentView.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
     
-    CGFloat buttonSize = 44;
-    CGFloat padding = 8;
+    _toggleButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    _toggleButton.frame = CGRectMake(0, 0, 60, 60);
+    _toggleButton.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
+    _toggleButton.layer.cornerRadius = 10;
+    _toggleButton.setTitleColor([UIColor whiteColor], forState:UIControlStateNormal);
+    _toggleButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    [_toggleButton setTitle:@"工具" forState:UIControlStateNormal];
+    [_toggleButton addTarget:self action:@selector(toggleButtonTapped) forControlEvents:UIControlEventTouchUpInside];
+    [_contentView addSubview:_toggleButton];
     
-    _recordButton = [self createButtonWithImage:@"record" action:@selector(recordButtonTapped)];
-    _playButton = [self createButtonWithImage:@"play" action:@selector(playButtonTapped)];
-    _pauseButton = [self createButtonWithImage:@"pause" action:@selector(pauseButtonTapped)];
+    CGFloat buttonSize = 50;
+    CGFloat padding = 6;
+    
+    _recordButton = [self createButtonWithTitle:@"录制" action:@selector(recordButtonTapped)];
+    _playButton = [self createButtonWithTitle:@"播放" action:@selector(playButtonTapped)];
+    _pauseButton = [self createButtonWithTitle:@"暂停" action:@selector(pauseButtonTapped)];
     _pauseButton.hidden = YES;
-    _stopButton = [self createButtonWithImage:@"stop" action:@selector(stopButtonTapped)];
-    _saveButton = [self createButtonWithImage:@"save" action:@selector(saveButtonTapped)];
-    _scriptButton = [self createButtonWithImage:@"script" action:@selector(scriptButtonTapped)];
-    _logsButton = [self createButtonWithImage:@"logs" action:@selector(logsButtonTapped)];
-    _hideButton = [self createButtonWithImage:@"hide" action:@selector(hideButtonTapped)];
+    _stopButton = [self createButtonWithTitle:@"停止" action:@selector(stopButtonTapped)];
+    _saveButton = [self createButtonWithTitle:@"保存" action:@selector(saveButtonTapped)];
+    _scriptButton = [self createButtonWithTitle:@"脚本" action:@selector(scriptButtonTapped)];
+    _logsButton = [self createButtonWithTitle:@"日志" action:@selector(logsButtonTapped)];
+    _hideButton = [self createButtonWithTitle:@"隐藏" action:@selector(hideButtonTapped)];
     
     NSArray *buttons = @[_recordButton, _playButton, _pauseButton, _stopButton, _saveButton, _scriptButton, _logsButton, _hideButton];
     
     NSLayoutYAxisAnchor *previousAnchor = nil;
     for (UIButton *button in buttons) {
         button.translatesAutoresizingMaskIntoConstraints = NO;
+        button.alpha = 0;
+        button.hidden = YES;
         [_contentView addSubview:button];
         
         [NSLayoutConstraint activateConstraints:@[
@@ -99,42 +124,114 @@
         previousAnchor = button.bottomAnchor;
     }
     
-    [_contentView.bottomAnchor constraintEqualToAnchor:previousAnchor constant:padding].active = YES;
+    _contentViewHeightConstraint.constant = 60;
     
-    _progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+    _progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleBar];
     _progressView.translatesAutoresizingMaskIntoConstraints = NO;
-    _progressView.tintColor = [UIColor greenColor];
+    _progressView.tintColor = [UIColor colorWithRed:0.2 green:0.8 blue:0.4 alpha:1.0];
     _progressView.hidden = YES;
+    _progressView.layer.cornerRadius = 2;
     [_contentView addSubview:_progressView];
     
     [NSLayoutConstraint activateConstraints:@[
-        [_progressView.leadingAnchor constraintEqualToAnchor:_contentView.leadingAnchor constant:4],
-        [_progressView.trailingAnchor constraintEqualToAnchor:_contentView.trailingAnchor constant:-4],
-        [_progressView.heightAnchor constraintEqualToConstant:2],
-        [_progressView.topAnchor constraintEqualToAnchor:_stopButton.bottomAnchor constant:4],
+        [_progressView.leadingAnchor constraintEqualToAnchor:_contentView.leadingAnchor constant:8],
+        [_progressView.trailingAnchor constraintEqualToAnchor:_contentView.trailingAnchor constant:-8],
+        [_progressView.heightAnchor constraintEqualToConstant:3],
+        [_progressView.topAnchor constraintEqualToAnchor:_stopButton.bottomAnchor constant:8],
     ]];
     
     _progressLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     _progressLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _progressLabel.font = [UIFont systemFontOfSize:10];
-    _progressLabel.textColor = [UIColor whiteColor];
+    _progressLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
+    _progressLabel.textColor = [UIColor colorWithRed:0.8 green:0.8 blue:0.8 alpha:1.0];
     _progressLabel.textAlignment = NSTextAlignmentCenter;
     _progressLabel.hidden = YES;
+    _progressLabel.shadowColor = [UIColor blackColor];
+    _progressLabel.shadowOffset = CGSizeMake(0, 1);
     [_contentView addSubview:_progressLabel];
     
     [NSLayoutConstraint activateConstraints:@[
         [_progressLabel.leadingAnchor constraintEqualToAnchor:_contentView.leadingAnchor],
         [_progressLabel.trailingAnchor constraintEqualToAnchor:_contentView.trailingAnchor],
-        [_progressLabel.topAnchor constraintEqualToAnchor:_progressView.bottomAnchor constant:2],
+        [_progressLabel.topAnchor constraintEqualToAnchor:_progressView.bottomAnchor constant:4],
+        [_progressLabel.bottomAnchor constraintEqualToAnchor:_contentView.bottomAnchor constant:-8],
     ]];
 }
 
-- (UIButton *)createButtonWithImage:(NSString *)imageName action:(SEL)action {
+- (void)setupNotifications {
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(applicationDidBecomeActive:) 
+                                                 name:UIApplicationDidBecomeActiveNotification 
+                                               object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(windowDidBecomeKey:) 
+                                                 name:UIWindowDidBecomeKeyNotification 
+                                               object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(windowDidResignKey:) 
+                                                 name:UIWindowDidResignKeyNotification 
+                                               object:nil];
+}
+
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (_isVisible && self.hidden) {
+            [self show];
+        }
+    });
+}
+
+- (void)windowDidBecomeKey:(NSNotification *)notification {
+    UIWindow *window = notification.object;
+    if (window && self.superview != window) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (_isVisible && !self.hidden) {
+                [self removeFromSuperview];
+                [window addSubview:self];
+                self.frame = window.bounds;
+            }
+        });
+    }
+}
+
+- (void)windowDidResignKey:(NSNotification *)notification {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (_isVisible && self.hidden) {
+            [self show];
+        }
+    });
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    
+    if (_autoHideTimer) {
+        [_autoHideTimer invalidate];
+        _autoHideTimer = nil;
+    }
+    
+    if (_checkVisibilityTimer) {
+        [_checkVisibilityTimer invalidate];
+        _checkVisibilityTimer = nil;
+    }
+}
+
+- (UIButton *)createButtonWithTitle:(NSString *)title action:(SEL)action {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-    [button setImage:[self imageWithColor:[UIColor whiteColor] size:CGSizeMake(24, 24)] forState:UIControlStateNormal];
-    [button setImage:[self imageWithColor:[UIColor grayColor] size:CGSizeMake(24, 24)] forState:UIControlStateHighlighted];
+    button.backgroundColor = [UIColor colorWithRed:0.15 green:0.15 blue:0.15 alpha:0.9];
+    button.layer.cornerRadius = 8;
+    button.layer.borderWidth = 1;
+    button.layer.borderColor = [UIColor colorWithRed:0.3 green:0.3 blue:0.3 alpha:0.5].CGColor;
+    
+    [button setTitle:title forState:UIControlStateNormal];
+    [button setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    
+    [button setBackgroundImage:[self imageWithColor:[UIColor colorWithRed:0.25 green:0.25 blue:0.25 alpha:1.0] size:CGSizeMake(1, 1)] forState:UIControlStateHighlighted];
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
-    button.tintColor = [UIColor whiteColor];
+    
     return button;
 }
 
@@ -198,36 +295,166 @@
 }
 
 - (void)autoHide {
-    [self hide];
+    if (_isExpanded) {
+        [self collapse];
+    }
+}
+
+- (void)toggleButtonTapped {
+    if (_isExpanded) {
+        [self collapse];
+    } else {
+        [self expand];
+    }
+    [self resetAutoHideTimer];
+}
+
+- (void)expand {
+    _isExpanded = YES;
+    
+    CGFloat buttonSize = 50;
+    CGFloat padding = 6;
+    NSUInteger buttonCount = 8;
+    CGFloat contentHeight = buttonCount * (buttonSize + padding) + padding;
+    
+    _contentViewHeightConstraint.constant = contentHeight;
+    
+    [UIView animateWithDuration:0.3 animations:^{
+        [self layoutIfNeeded];
+        
+        for (UIView *subview in _contentView.subviews) {
+            if ([subview isKindOfClass:[UIButton class]] && subview != _toggleButton) {
+                subview.alpha = 1;
+                subview.hidden = NO;
+            }
+        }
+        
+        _toggleButton.alpha = 0;
+    } completion:^(BOOL finished) {
+        _toggleButton.hidden = YES;
+    }];
+}
+
+- (void)collapse {
+    _isExpanded = NO;
+    
+    _contentViewHeightConstraint.constant = 60;
+    
+    [UIView animateWithDuration:0.3 animations:^{
+        [self layoutIfNeeded];
+        
+        for (UIView *subview in _contentView.subviews) {
+            if ([subview isKindOfClass:[UIButton class]] && subview != _toggleButton) {
+                subview.alpha = 0;
+                subview.hidden = YES;
+            }
+        }
+        
+        _toggleButton.alpha = 1;
+    } completion:^(BOOL finished) {
+        _toggleButton.hidden = NO;
+    }];
 }
 
 - (void)show {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    if (!keyWindow) {
-        NSArray *windows = [UIApplication sharedApplication].windows;
-        if (windows.count > 0) {
-            keyWindow = windows[0];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self startVisibilityCheck];
+        
+        UIWindow *keyWindow = [self getKeyWindow];
+        if (!keyWindow) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self show];
+            });
+            return;
+        }
+        
+        if (self.superview != keyWindow) {
+            [self removeFromSuperview];
+            [keyWindow addSubview:self];
+        }
+        
+        self.frame = keyWindow.bounds;
+        self.hidden = NO;
+        _isVisible = YES;
+        _isExpanded = NO;
+        
+        [self collapse];
+        [self resetAutoHideTimer];
+    });
+}
+
+- (void)startVisibilityCheck {
+    if (_checkVisibilityTimer) {
+        [_checkVisibilityTimer invalidate];
+        _checkVisibilityTimer = nil;
+    }
+    
+    _checkVisibilityTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 
+                                                          target:self 
+                                                        selector:@selector(checkVisibility) 
+                                                        userInfo:nil 
+                                                         repeats:YES];
+}
+
+- (void)checkVisibility {
+    if (!_isVisible) return;
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.hidden || !self.superview) {
+            [self show];
+        }
+    });
+}
+
+- (UIWindow *)getKeyWindow {
+    UIWindow *keyWindow = nil;
+    
+    if (@available(iOS 13.0, *)) {
+        NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene *scene in scenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) {
+                        keyWindow = window;
+                        break;
+                    }
+                }
+                if (keyWindow) break;
+            }
         }
     }
     
-    if (!keyWindow) return;
-    
-    if (self.superview != keyWindow) {
-        [self removeFromSuperview];
-        [keyWindow addSubview:self];
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].keyWindow;
     }
     
-    if (self.hidden) {
-        self.hidden = NO;
-        _isVisible = YES;
-        [self resetAutoHideTimer];
+    if (!keyWindow) {
+        NSArray *windows = [UIApplication sharedApplication].windows;
+        for (UIWindow *window in windows) {
+            if (!window.hidden && window.windowLevel == UIWindowLevelNormal) {
+                keyWindow = window;
+                break;
+            }
+        }
     }
+    
+    if (!keyWindow && [UIApplication sharedApplication].windows.count > 0) {
+        keyWindow = [UIApplication sharedApplication].windows.lastObject;
+    }
+    
+    return keyWindow;
 }
 
 - (void)hide {
     if (!self.hidden) {
         self.hidden = YES;
         _isVisible = NO;
+        
+        if (_checkVisibilityTimer) {
+            [_checkVisibilityTimer invalidate];
+            _checkVisibilityTimer = nil;
+        }
     }
 }
 
@@ -241,13 +468,18 @@
 
 - (void)updateRecordingState:(BOOL)isRecording {
     _isRecording = isRecording;
-    _recordButton.tintColor = isRecording ? [UIColor redColor] : [UIColor whiteColor];
     
     if (isRecording) {
+        _recordButton.backgroundColor = [UIColor colorWithRed:0.9 green:0.2 blue:0.2 alpha:0.9];
+        _recordButton.layer.borderColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:0.8].CGColor;
+        [_recordButton setTitle:@"● 录制中" forState:UIControlStateNormal];
         _playButton.enabled = NO;
         _pauseButton.enabled = NO;
         _stopButton.enabled = YES;
     } else {
+        _recordButton.backgroundColor = [UIColor colorWithRed:0.15 green:0.15 blue:0.15 alpha:0.9];
+        _recordButton.layer.borderColor = [UIColor colorWithRed:0.3 green:0.3 blue:0.3 alpha:0.5].CGColor;
+        [_recordButton setTitle:@"录制" forState:UIControlStateNormal];
         _playButton.enabled = YES;
         _pauseButton.enabled = _isPlaying;
         _stopButton.enabled = YES;
@@ -260,6 +492,11 @@
     _pauseButton.hidden = !isPlaying || isPaused;
     
     if (isPlaying) {
+        if (isPaused) {
+            [_pauseButton setTitle:@"▶ 继续" forState:UIControlStateNormal];
+        } else {
+            [_pauseButton setTitle:@"⏸ 暂停" forState:UIControlStateNormal];
+        }
         _recordButton.enabled = NO;
         _progressView.hidden = NO;
         _progressLabel.hidden = NO;
@@ -275,7 +512,7 @@
 - (void)updateProgress:(NSUInteger)currentIndex totalCount:(NSUInteger)totalCount {
     if (totalCount == 0) return;
     _progressView.progress = (CGFloat)currentIndex / totalCount;
-    _progressLabel.text = [NSString stringWithFormat:@"%lu/%lu", (unsigned long)currentIndex + 1, (unsigned long)totalCount];
+    _progressLabel.text = [NSString stringWithFormat:@"进度：%lu/%lu", (unsigned long)currentIndex + 1, (unsigned long)totalCount];
 }
 
 - (void)recordButtonTapped {

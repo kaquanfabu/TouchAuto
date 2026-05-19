@@ -2,7 +2,7 @@
 
 typedef void (^PanelActionBlock)(void);
 
-@interface FloatingPanel : UIWindow
+@interface FloatingPanel : UIView
 
 @property (nonatomic, assign) BOOL isVisible;
 @property (nonatomic, assign) CGFloat cornerRadius;

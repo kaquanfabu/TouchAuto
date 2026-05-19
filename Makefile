@@ -9,15 +9,10 @@ TWEAK_NAME = TouchAuto
 TouchAuto_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -DTROLLSTORE
 TouchAuto_FRAMEWORKS = UIKit CoreGraphics CoreText ImageIO QuartzCore Foundation
 TouchAuto_FILES = tweak/TouchAuto.m \
-                  tweak/TouchRecorder.h \
                   tweak/TouchRecorder.m \
-                  tweak/TouchPlayer.h \
                   tweak/TouchPlayer.m \
-                  tweak/FloatingPanel.h \
                   tweak/FloatingPanel.m \
-                  tweak/TouchEvent.h \
                   tweak/TouchEvent.m \
-                  tweak/AdvancedFeatures.h \
                   tweak/AdvancedFeatures.m
 
 include $(THEOS_MAKE_PATH)/tweak.mk

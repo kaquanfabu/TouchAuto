@@ -285,8 +285,25 @@
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     CGPoint pointInContentView = [self convertPoint:point toView:_contentView];
     
+    // 如果面板收起，只检查toggleButton
+    if (!_isExpanded) {
+        if (_toggleButton.hidden == NO && CGRectContainsPoint(_toggleButton.frame, pointInContentView)) {
+            return _toggleButton;
+        }
+        // 收起状态，其他区域穿透
+        return nil;
+    }
+    
+    // 展开状态，检查所有子视图
+    for (UIView *subview in _contentView.subviews) {
+        if (subview.hidden || subview.alpha < 0.01) continue;
+        if (CGRectContainsPoint(subview.frame, pointInContentView)) {
+            return subview;
+        }
+    }
+    
+    // 如果点击在contentView范围内但没有子视图响应，返回contentView
     if (CGRectContainsPoint(_contentView.bounds, pointInContentView)) {
-        // 让内容视图正常处理触摸事件
         return _contentView;
     }
     

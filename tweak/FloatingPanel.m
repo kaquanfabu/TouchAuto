@@ -64,18 +64,20 @@
     
     CGFloat buttonSize = 44;
     CGFloat padding = 8;
-    NSArray *buttons = @[
-        ({ _recordButton = [self createButtonWithImage:@"record" action:@selector(recordButtonTapped)]; _recordButton; }),
-        ({ _playButton = [self createButtonWithImage:@"play" action:@selector(playButtonTapped)]; _playButton; }),
-        ({ _pauseButton = [self createButtonWithImage:@"pause" action:@selector(pauseButtonTapped)]; _pauseButton; _pauseButton.hidden = YES; }),
-        ({ _stopButton = [self createButtonWithImage:@"stop" action:@selector(stopButtonTapped)]; _stopButton; }),
-        ({ _saveButton = [self createButtonWithImage:@"save" action:@selector(saveButtonTapped)]; _saveButton; }),
-        ({ _scriptButton = [self createButtonWithImage:@"script" action:@selector(scriptButtonTapped)]; _scriptButton; }),
-        ({ _logsButton = [self createButtonWithImage:@"logs" action:@selector(logsButtonTapped)]; _logsButton; }),
-        ({ _hideButton = [self createButtonWithImage:@"hide" action:@selector(hideButtonTapped)]; _hideButton; }),
-    ];
     
-    NSLayoutConstraint *previousConstraint = nil;
+    _recordButton = [self createButtonWithImage:@"record" action:@selector(recordButtonTapped)];
+    _playButton = [self createButtonWithImage:@"play" action:@selector(playButtonTapped)];
+    _pauseButton = [self createButtonWithImage:@"pause" action:@selector(pauseButtonTapped)];
+    _pauseButton.hidden = YES;
+    _stopButton = [self createButtonWithImage:@"stop" action:@selector(stopButtonTapped)];
+    _saveButton = [self createButtonWithImage:@"save" action:@selector(saveButtonTapped)];
+    _scriptButton = [self createButtonWithImage:@"script" action:@selector(scriptButtonTapped)];
+    _logsButton = [self createButtonWithImage:@"logs" action:@selector(logsButtonTapped)];
+    _hideButton = [self createButtonWithImage:@"hide" action:@selector(hideButtonTapped)];
+    
+    NSArray *buttons = @[_recordButton, _playButton, _pauseButton, _stopButton, _saveButton, _scriptButton, _logsButton, _hideButton];
+    
+    NSLayoutYAxisAnchor *previousAnchor = nil;
     for (UIButton *button in buttons) {
         button.translatesAutoresizingMaskIntoConstraints = NO;
         [_contentView addSubview:button];
@@ -86,15 +88,15 @@
             [button.centerXAnchor constraintEqualToAnchor:_contentView.centerXAnchor],
         ]];
         
-        if (previousConstraint) {
-            [button.topAnchor constraintEqualToAnchor:previousConstraint.bottomAnchor constant:padding].active = YES;
+        if (previousAnchor) {
+            [button.topAnchor constraintEqualToAnchor:previousAnchor constant:padding].active = YES;
         } else {
             [button.topAnchor constraintEqualToAnchor:_contentView.topAnchor constant:padding].active = YES;
         }
-        previousConstraint = button.bottomAnchor;
+        previousAnchor = button.bottomAnchor;
     }
     
-    [_contentView.bottomAnchor constraintEqualToAnchor:previousConstraint constant:padding].active = YES;
+    [_contentView.bottomAnchor constraintEqualToAnchor:previousAnchor constant:padding].active = YES;
     
     _progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
     _progressView.translatesAutoresizingMaskIntoConstraints = NO;

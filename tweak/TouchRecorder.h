@@ -17,6 +17,7 @@ typedef void (^EventRecordedBlock)(TouchEvent *event);
 - (void)startRecording;
 - (void)stopRecording;
 - (void)clearRecording;
+- (void)addEvent:(TouchEvent *)event;
 - (void)recordEvent:(TouchEvent *)event;
 - (BOOL)saveToFile:(NSString *)path error:(NSError **)error;
 - (BOOL)loadFromFile:(NSString *)path error:(NSError **)error;

@@ -11,7 +11,6 @@
 @property (nonatomic, strong) UIButton *saveButton;
 @property (nonatomic, strong) UIButton *scriptButton;
 @property (nonatomic, strong) UIButton *logsButton;
-@property (nonatomic, strong) UIButton *hideButton;
 @property (nonatomic, strong) UIProgressView *progressView;
 @property (nonatomic, strong) UILabel *progressLabel;
 @property (nonatomic, assign) CGPoint initialTouchPoint;
@@ -34,7 +33,7 @@
     dispatch_once(&onceToken, ^{
         instance = [[FloatingPanel alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, [UIScreen mainScreen].bounds.size.height)];
         instance.backgroundColor = [UIColor clearColor];
-        instance.userInteractionEnabled = YES;
+        instance.userInteractionEnabled = NO;
     });
     return instance;
 }
@@ -65,6 +64,7 @@
     _contentView.layer.shadowRadius = 6;
     _contentView.layer.borderWidth = 1;
     _contentView.layer.borderColor = [UIColor colorWithRed:0.3 green:0.3 blue:0.3 alpha:0.5].CGColor;
+    _contentView.userInteractionEnabled = YES;
     
     UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
     [_contentView addGestureRecognizer:panGesture];
@@ -99,9 +99,8 @@
     _saveButton = [self createButtonWithTitle:@"保存" action:@selector(saveButtonTapped)];
     _scriptButton = [self createButtonWithTitle:@"脚本" action:@selector(scriptButtonTapped)];
     _logsButton = [self createButtonWithTitle:@"日志" action:@selector(logsButtonTapped)];
-    _hideButton = [self createButtonWithTitle:@"隐藏" action:@selector(hideButtonTapped)];
     
-    NSArray *buttons = @[_recordButton, _playButton, _pauseButton, _stopButton, _saveButton, _scriptButton, _logsButton, _hideButton];
+    NSArray *buttons = @[_recordButton, _playButton, _pauseButton, _stopButton, _saveButton, _scriptButton, _logsButton];
     
     NSLayoutYAxisAnchor *previousAnchor = nil;
     for (UIButton *button in buttons) {
@@ -283,6 +282,16 @@
     }];
 }
 
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    CGPoint pointInContentView = [self convertPoint:point toView:_contentView];
+    
+    if (CGRectContainsPoint(_contentView.bounds, pointInContentView)) {
+        return _contentView;
+    }
+    
+    return nil;
+}
+
 - (void)resetAutoHideTimer {
     if (_autoHideTimer) {
         [_autoHideTimer invalidate];
@@ -314,7 +323,7 @@
     
     CGFloat buttonSize = 50;
     CGFloat padding = 6;
-    NSUInteger buttonCount = 8;
+    NSUInteger buttonCount = 7;
     CGFloat contentHeight = buttonCount * (buttonSize + padding) + padding;
     
     _contentViewHeightConstraint.constant = contentHeight;
@@ -562,10 +571,6 @@
     if (_showLogsBlock) {
         _showLogsBlock();
     }
-}
-
-- (void)hideButtonTapped {
-    [self hide];
 }
 
 @end

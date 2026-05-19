@@ -58,6 +58,10 @@
     [_touchStartTimes removeAllObjects];
 }
 
+- (void)addEvent:(TouchEvent *)event {
+    [_recordedEvents addObject:event];
+}
+
 - (void)recordEvent:(TouchEvent *)event {
     if (!_isRecording) return;
     

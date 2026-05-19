@@ -6,3 +6,4 @@ Description: Touch automation tweak for iOS - Supports TrollStore
 Maintainer: TouchAuto Team
 Author: TouchAuto Team
 Section: Tweaks
+Depends: mobilesubstrate

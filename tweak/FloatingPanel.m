@@ -33,7 +33,7 @@
     dispatch_once(&onceToken, ^{
         instance = [[FloatingPanel alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, [UIScreen mainScreen].bounds.size.height)];
         instance.backgroundColor = [UIColor clearColor];
-        instance.userInteractionEnabled = NO;
+        instance.clipsToBounds = NO;
     });
     return instance;
 }
@@ -286,9 +286,11 @@
     CGPoint pointInContentView = [self convertPoint:point toView:_contentView];
     
     if (CGRectContainsPoint(_contentView.bounds, pointInContentView)) {
+        // 让内容视图正常处理触摸事件
         return _contentView;
     }
     
+    // 点击在面板范围外，允许穿透
     return nil;
 }
 

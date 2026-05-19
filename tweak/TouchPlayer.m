@@ -266,7 +266,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setPhaseSel withObject:@(phase)];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     SEL setWindowSel = NSSelectorFromString(@"setWindow:");
@@ -274,7 +274,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setWindowSel withObject:window];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
@@ -282,7 +282,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setTapCountSel withObject:@1];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     // 设置触摸位置
@@ -291,7 +291,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     // 创建 UIEvent
@@ -301,7 +301,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [event performSelector:setWindowEventSel withObject:window];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     // 获取window的sendEvent方法并直接调用
@@ -343,7 +343,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setPhaseSel withObject:@(phase)];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     SEL setWindowSel = NSSelectorFromString(@"setWindow:");
@@ -351,7 +351,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setWindowSel withObject:window];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
@@ -359,7 +359,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setTapCountSel withObject:@1];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     // 设置触摸位置
@@ -368,7 +368,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     // 创建事件
@@ -378,7 +378,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [event performSelector:setWindowEventSel withObject:window];
-#pragma clang pop
+#pragma clang diagnostic pop
     }
     
     // 使用 NSSet 而不是 NSArray

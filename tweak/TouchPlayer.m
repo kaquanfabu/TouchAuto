@@ -259,21 +259,49 @@
     
     // 创建 UITouch
     UITouch *touch = [[UITouch alloc] init];
-    [touch setPhase:phase];
-    [touch setWindow:window];
-    [touch setTapCount:1];
+    
+    // 使用私有API设置触摸属性
+    SEL setPhaseSel = NSSelectorFromString(@"setPhase:");
+    if ([touch respondsToSelector:setPhaseSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [touch performSelector:setPhaseSel withObject:@(phase)];
+#pragma clang pop
+    }
+    
+    SEL setWindowSel = NSSelectorFromString(@"setWindow:");
+    if ([touch respondsToSelector:setWindowSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [touch performSelector:setWindowSel withObject:window];
+#pragma clang pop
+    }
+    
+    SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
+    if ([touch respondsToSelector:setTapCountSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [touch performSelector:setTapCountSel withObject:@1];
+#pragma clang pop
+    }
     
     // 设置触摸位置
-    SEL setLocationSel = @selector(setLocationInWindow:);
+    SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
     if ([touch respondsToSelector:setLocationSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
+#pragma clang pop
     }
     
     // 创建 UIEvent
     UIEvent *event = [[UIEvent alloc] init];
-    SEL setWindowEventSel = @selector(setWindow:);
+    SEL setWindowEventSel = NSSelectorFromString(@"setWindow:");
     if ([event respondsToSelector:setWindowEventSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [event performSelector:setWindowEventSel withObject:window];
+#pragma clang pop
     }
     
     // 获取window的sendEvent方法并直接调用
@@ -308,25 +336,53 @@
     
     // 创建触摸对象
     UITouch *touch = [[UITouch alloc] init];
-    [touch setPhase:phase];
-    [touch setWindow:window];
-    [touch setTapCount:1];
+    
+    // 使用私有API设置触摸属性
+    SEL setPhaseSel = NSSelectorFromString(@"setPhase:");
+    if ([touch respondsToSelector:setPhaseSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [touch performSelector:setPhaseSel withObject:@(phase)];
+#pragma clang pop
+    }
+    
+    SEL setWindowSel = NSSelectorFromString(@"setWindow:");
+    if ([touch respondsToSelector:setWindowSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [touch performSelector:setWindowSel withObject:window];
+#pragma clang pop
+    }
+    
+    SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
+    if ([touch respondsToSelector:setTapCountSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [touch performSelector:setTapCountSel withObject:@1];
+#pragma clang pop
+    }
     
     // 设置触摸位置
-    SEL setLocationSel = @selector(setLocationInWindow:);
+    SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
     if ([touch respondsToSelector:setLocationSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
+#pragma clang pop
     }
     
     // 创建事件
     UIEvent *event = [[UIEvent alloc] init];
-    SEL setWindowEventSel = @selector(setWindow:);
+    SEL setWindowEventSel = NSSelectorFromString(@"setWindow:");
     if ([event respondsToSelector:setWindowEventSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         [event performSelector:setWindowEventSel withObject:window];
+#pragma clang pop
     }
     
-    // 直接调用视图的触摸处理方法
-    NSMutableArray *touches = [NSMutableArray arrayWithObject:touch];
+    // 使用 NSSet 而不是 NSArray
+    NSSet *touches = [NSSet setWithObject:touch];
     
     if (phase == UITouchPhaseBegan) {
         if ([hitView respondsToSelector:@selector(touchesBegan:withEvent:)]) {

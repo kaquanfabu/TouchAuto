@@ -192,7 +192,14 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
 + (void)importScriptFromFilesApp {
     dispatch_async(dispatch_get_main_queue(), ^{
         NSArray *types = @[@"public.json", @"public.text"];
-        UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initDocumentPickerForOpeningContentTypes:types asCopy:YES];
+        
+        UIDocumentPickerViewController *picker = nil;
+        if (@available(iOS 14.0, *)) {
+            picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types asCopy:YES];
+        } else {
+            picker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:types inMode:UIDocumentPickerModeOpen];
+        }
+        
         picker.delegate = (id<UIDocumentPickerDelegate>)self;
         picker.allowsMultipleSelection = NO;
         

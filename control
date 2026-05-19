@@ -1,0 +1,9 @@
+Package: com.touchauto.tweak
+Name: TouchAuto
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Touch automation tweak for iOS
+Depends: mobilesubstrate
+Maintainer: TouchAuto Team
+Author: TouchAuto Team
+Section: Tweaks

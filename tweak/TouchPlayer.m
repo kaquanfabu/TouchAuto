@@ -7,8 +7,6 @@
 @property (nonatomic, assign) BOOL isPaused;
 @property (nonatomic, strong) NSArray<TouchEvent *> *events;
 @property (nonatomic, assign) NSUInteger currentIndex;
-@property (nonatomic, assign, readwrite) NSUInteger loopCount;
-@property (nonatomic, assign, readwrite) NSUInteger currentLoop;
 @property (nonatomic, assign) BOOL infiniteLoop;
 @property (nonatomic, strong) dispatch_queue_t playbackQueue;
 @property (nonatomic, strong) dispatch_source_t timerSource;

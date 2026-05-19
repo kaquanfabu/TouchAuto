@@ -134,13 +134,6 @@
     _progressView.layer.cornerRadius = 2;
     [_contentView addSubview:_progressView];
     
-    [NSLayoutConstraint activateConstraints:@[
-        [_progressView.leadingAnchor constraintEqualToAnchor:_contentView.leadingAnchor constant:8],
-        [_progressView.trailingAnchor constraintEqualToAnchor:_contentView.trailingAnchor constant:-8],
-        [_progressView.heightAnchor constraintEqualToConstant:3],
-        [_progressView.topAnchor constraintEqualToAnchor:_stopButton.bottomAnchor constant:8],
-    ]];
-    
     _progressLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     _progressLabel.translatesAutoresizingMaskIntoConstraints = NO;
     _progressLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
@@ -150,13 +143,6 @@
     _progressLabel.shadowColor = [UIColor blackColor];
     _progressLabel.shadowOffset = CGSizeMake(0, 1);
     [_contentView addSubview:_progressLabel];
-    
-    [NSLayoutConstraint activateConstraints:@[
-        [_progressLabel.leadingAnchor constraintEqualToAnchor:_contentView.leadingAnchor],
-        [_progressLabel.trailingAnchor constraintEqualToAnchor:_contentView.trailingAnchor],
-        [_progressLabel.topAnchor constraintEqualToAnchor:_progressView.bottomAnchor constant:4],
-        [_progressLabel.bottomAnchor constraintEqualToAnchor:_contentView.bottomAnchor constant:-8],
-    ]];
 }
 
 - (void)setupNotifications {
@@ -528,14 +514,54 @@
             [_pauseButton setTitle:@"⏸ 暂停" forState:UIControlStateNormal];
         }
         _recordButton.enabled = NO;
+        
+        // 显示进度条和标签，设置约束
         _progressView.hidden = NO;
         _progressLabel.hidden = NO;
+        
+        // 移除旧约束
+        for (NSLayoutConstraint *constraint in _contentView.constraints) {
+            if (constraint.firstItem == _progressView || constraint.secondItem == _progressView ||
+                constraint.firstItem == _progressLabel || constraint.secondItem == _progressLabel) {
+                constraint.active = NO;
+            }
+        }
+        
+        // 添加新约束：进度条在日志按钮下方
+        [NSLayoutConstraint activateConstraints:@[
+            [_progressView.leadingAnchor constraintEqualToAnchor:_contentView.leadingAnchor constant:8],
+            [_progressView.trailingAnchor constraintEqualToAnchor:_contentView.trailingAnchor constant:-8],
+            [_progressView.heightAnchor constraintEqualToConstant:3],
+            [_progressView.topAnchor constraintEqualToAnchor:_logsButton.bottomAnchor constant:8],
+            
+            [_progressLabel.leadingAnchor constraintEqualToAnchor:_contentView.leadingAnchor],
+            [_progressLabel.trailingAnchor constraintEqualToAnchor:_contentView.trailingAnchor],
+            [_progressLabel.topAnchor constraintEqualToAnchor:_progressView.bottomAnchor constant:4],
+            [_progressLabel.bottomAnchor constraintEqualToAnchor:_contentView.bottomAnchor constant:-8],
+        ]];
+        
+        // 展开面板以显示进度条
+        if (!_isExpanded) {
+            [self expand];
+        }
     } else {
+        // 播放结束时恢复按钮状态
+        _playButton.hidden = NO;
+        _pauseButton.hidden = YES;
+        [_pauseButton setTitle:@"暂停" forState:UIControlStateNormal];
         _recordButton.enabled = YES;
         _progressView.hidden = YES;
         _progressLabel.hidden = YES;
         _progressView.progress = 0;
         _progressLabel.text = @"";
+        
+        // 移除进度条相关约束
+        for (NSLayoutConstraint *constraint in _contentView.constraints) {
+            if (constraint.firstItem == _progressView || constraint.secondItem == _progressView ||
+                constraint.firstItem == _progressLabel || constraint.secondItem == _progressLabel) {
+                constraint.active = NO;
+            }
+        }
     }
 }
 
@@ -597,7 +623,7 @@
     if (!keyWindow) return;
     
     CGFloat panelWidth = 300;
-    CGFloat panelHeight = 220;
+    CGFloat panelHeight = 290;
     CGFloat padding = 20;
     
     UIView *backdropView = [[UIView alloc] initWithFrame:keyWindow.bounds];
@@ -645,6 +671,27 @@
     infiniteLabel.font = [UIFont systemFontOfSize:14];
     infiniteLabel.textColor = [UIColor lightGrayColor];
     
+    UILabel *waitTimeLabel = [[UILabel alloc] init];
+    waitTimeLabel.text = @"完成后等待:";
+    waitTimeLabel.font = [UIFont systemFontOfSize:14];
+    waitTimeLabel.textColor = [UIColor lightGrayColor];
+    
+    UITextField *waitTimeField = [[UITextField alloc] init];
+    waitTimeField.placeholder = @"0";
+    waitTimeField.keyboardType = UIKeyboardTypeDecimalPad;
+    waitTimeField.backgroundColor = [UIColor whiteColor];
+    waitTimeField.textColor = [UIColor blackColor];
+    waitTimeField.font = [UIFont systemFontOfSize:14];
+    waitTimeField.textAlignment = NSTextAlignmentCenter;
+    waitTimeField.layer.cornerRadius = 8;
+    waitTimeField.text = @"0";
+    waitTimeField.tag = 1003;
+    
+    UILabel *waitTimeUnitLabel = [[UILabel alloc] init];
+    waitTimeUnitLabel.text = @"秒";
+    waitTimeUnitLabel.font = [UIFont systemFontOfSize:14];
+    waitTimeUnitLabel.textColor = [UIColor lightGrayColor];
+    
     UIButton *playButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [playButton setTitle:@"开始播放" forState:UIControlStateNormal];
     [playButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
@@ -666,6 +713,9 @@
     [panelView addSubview:loopCountField];
     [panelView addSubview:infiniteSwitch];
     [panelView addSubview:infiniteLabel];
+    [panelView addSubview:waitTimeLabel];
+    [panelView addSubview:waitTimeField];
+    [panelView addSubview:waitTimeUnitLabel];
     [panelView addSubview:playButton];
     [panelView addSubview:cancelButton];
     
@@ -675,6 +725,9 @@
     loopCountField.translatesAutoresizingMaskIntoConstraints = NO;
     infiniteSwitch.translatesAutoresizingMaskIntoConstraints = NO;
     infiniteLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    waitTimeLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    waitTimeField.translatesAutoresizingMaskIntoConstraints = NO;
+    waitTimeUnitLabel.translatesAutoresizingMaskIntoConstraints = NO;
     playButton.translatesAutoresizingMaskIntoConstraints = NO;
     cancelButton.translatesAutoresizingMaskIntoConstraints = NO;
     
@@ -705,7 +758,18 @@
         [infiniteLabel.centerYAnchor constraintEqualToAnchor:infiniteSwitch.centerYAnchor],
         [infiniteLabel.trailingAnchor constraintEqualToAnchor:infiniteSwitch.leadingAnchor constant:-10],
         
-        [playButton.topAnchor constraintEqualToAnchor:infiniteSwitch.bottomAnchor constant:20],
+        [waitTimeLabel.topAnchor constraintEqualToAnchor:infiniteSwitch.bottomAnchor constant:20],
+        [waitTimeLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:padding],
+        
+        [waitTimeField.topAnchor constraintEqualToAnchor:waitTimeLabel.topAnchor],
+        [waitTimeField.leadingAnchor constraintEqualToAnchor:waitTimeLabel.trailingAnchor constant:15],
+        [waitTimeField.widthAnchor constraintEqualToConstant:80],
+        [waitTimeField.heightAnchor constraintEqualToConstant:35],
+        
+        [waitTimeUnitLabel.topAnchor constraintEqualToAnchor:waitTimeField.topAnchor],
+        [waitTimeUnitLabel.leadingAnchor constraintEqualToAnchor:waitTimeField.trailingAnchor constant:8],
+        
+        [playButton.topAnchor constraintEqualToAnchor:waitTimeLabel.bottomAnchor constant:25],
         [playButton.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:padding],
         [playButton.trailingAnchor constraintEqualToAnchor:cancelButton.leadingAnchor constant:-10],
         [playButton.heightAnchor constraintEqualToConstant:40],
@@ -737,6 +801,7 @@
     
     UISwitch *infiniteSwitch = (UISwitch *)[panelView viewWithTag:1002];
     UITextField *loopCountField = (UITextField *)[panelView viewWithTag:1001];
+    UITextField *waitTimeField = (UITextField *)[panelView viewWithTag:1003];
     
     TouchPlayer *player = [TouchPlayer sharedInstance];
     TouchRecorder *recorder = [TouchRecorder sharedInstance];
@@ -760,6 +825,12 @@
         }
         [player setLoopCount:loopCount];
     }
+    
+    NSTimeInterval waitTime = 0;
+    if (waitTimeField.text.length > 0) {
+        waitTime = [waitTimeField.text doubleValue];
+    }
+    player.waitTimeAfterFinish = waitTime;
     
     [self dismissPlaybackPanel];
     

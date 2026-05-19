@@ -1,6 +1,7 @@
 #import "TouchRecorder.h"
 #import <MediaPlayer/MediaPlayer.h>
 #import <AVFoundation/AVFoundation.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 @interface TouchRecorder ()
 
@@ -36,37 +37,21 @@
 }
 
 - (void)setupVolumeListener {
-    _volumeView = [[MPVolumeView alloc] init];
-    _volumeView.hidden = YES;
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self 
-                                             selector:@selector(handleVolumeChanged:) 
-                                                 name:@"AVSystemController_SystemVolumeDidChangeNotification" 
-                                               object:nil];
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    [session setActive:YES error:nil];
+    [session addObserver:self forKeyPath:@"outputVolume" options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld context:nil];
 }
 
-- (void)handleVolumeChanged:(NSNotification *)notification {
-    if (!_isRecording) return;
-    
-    NSDictionary *userInfo = notification.userInfo;
-    if (!userInfo) return;
-    
-    NSNumber *reason = userInfo[@"AVSystemController_AudioVolumeChangeReasonNotificationParameter"];
-    if (!reason) return;
-    
-    NSInteger reasonValue = [reason integerValue];
-    
-    if (reasonValue == 1 || reasonValue == 0) {
-        NSNumber *volume = userInfo[@"AVSystemController_AudioVolumeNotificationParameter"];
-        if (volume) {
-            NSLog(@"[TouchRecorder] Volume changed to %f, reason: %ld", [volume floatValue], (long)reasonValue);
-            
-            static float lastVolume = -1;
-            if (lastVolume >= 0 && [volume floatValue] < lastVolume) {
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
+    if ([keyPath isEqualToString:@"outputVolume"]) {
+        NSNumber *newVolume = change[NSKeyValueChangeNewKey];
+        NSNumber *oldVolume = change[NSKeyValueChangeOldKey];
+        
+        if (_isRecording && newVolume && oldVolume) {
+            if ([newVolume floatValue] < [oldVolume floatValue]) {
                 NSLog(@"[TouchRecorder] Volume down pressed, stopping recording...");
                 [self stopRecording];
             }
-            lastVolume = [volume floatValue];
         }
     }
 }
@@ -191,6 +176,10 @@
     }
     
     return YES;
+}
+
+- (void)dealloc {
+    [[AVAudioSession sharedInstance] removeObserver:self forKeyPath:@"outputVolume"];
 }
 
 @end

@@ -14,6 +14,7 @@ typedef void (^PlaybackProgressBlock)(NSUInteger currentIndex, NSUInteger totalC
 @property (nonatomic, assign) CGFloat playbackSpeed;
 @property (nonatomic, assign) CGFloat randomOffset;
 @property (nonatomic, assign) NSTimeInterval randomDelayRange;
+@property (nonatomic, assign) NSTimeInterval waitTimeAfterFinish; // 播放完成后等待时间（秒）
 @property (nonatomic, copy) PlaybackStateChangeBlock stateChangeBlock;
 @property (nonatomic, copy) PlaybackCompleteBlock completeBlock;
 @property (nonatomic, copy) PlaybackProgressBlock progressBlock;

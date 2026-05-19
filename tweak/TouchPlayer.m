@@ -36,6 +36,7 @@
         _infiniteLoop = NO;
         _isPlaying = NO;
         _isPaused = NO;
+        _waitTimeAfterFinish = 0.0;
     }
     return self;
 }
@@ -121,6 +122,18 @@
         _currentLoop++;
         
         if (_infiniteLoop || _currentLoop < _loopCount) {
+            // 播放完成后等待
+            if (_waitTimeAfterFinish > 0) {
+                NSLog(@"[TouchPlayer] Waiting %f seconds before next loop...", _waitTimeAfterFinish);
+                __weak __typeof(self) weakSelf = self;
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_waitTimeAfterFinish * NSEC_PER_SEC)), _playbackQueue, ^{
+                    __strong __typeof(weakSelf) strongSelf = weakSelf;
+                    if (!strongSelf || !strongSelf->_isPlaying || strongSelf->_isPaused) return;
+                    strongSelf->_currentIndex = 0;
+                    [strongSelf executeNextEvent];
+                });
+                return;
+            }
             _currentIndex = 0;
         } else {
             [self stop];
@@ -146,16 +159,18 @@
         __strong __typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf || !strongSelf->_isPlaying || strongSelf->_isPaused) return;
         
-        [strongSelf injectTouchEvent:event];
-        
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!strongSelf->_isPlaying || strongSelf->_isPaused) return;
+            
+            [strongSelf injectTouchEvent:event];
+            
             if (strongSelf->_progressBlock) {
                 strongSelf->_progressBlock(strongSelf->_currentIndex, strongSelf->_events.count);
             }
+            
+            strongSelf->_currentIndex++;
+            [strongSelf executeNextEvent];
         });
-        
-        strongSelf->_currentIndex++;
-        [strongSelf executeNextEvent];
     });
     dispatch_resume(_timerSource);
 }
@@ -172,9 +187,7 @@
     
     NSLog(@"[TouchPlayer] Injecting event at (%f, %f), type: %ld", location.x, location.y, (long)event.type);
     
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self simulateTouchAtLocation:location withType:event.type];
-    });
+    [self simulateTouchAtLocation:location withType:event.type];
 }
 
 - (void)simulateTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
@@ -234,83 +247,107 @@
 }
 
 - (void)injectPrivateTouchAtLocation:(CGPoint)location phase:(UITouchPhase)phase window:(UIWindow *)window {
-    Class UITouchClass = objc_getClass("UITouch");
-    Class UIEventClass = objc_getClass("UIEvent");
+    NSLog(@"[TouchPlayer] Injecting touch at (%f, %f), phase: %ld, window: %@", 
+          location.x, location.y, (long)phase, window);
     
-    NSLog(@"[TouchPlayer] UITouchClass: %@, UIEventClass: %@", UITouchClass, UIEventClass);
+    // 方法1：直接在进程内调用 window 的 sendEvent
+    [self tryDirectSendEvent:location phase:phase window:window];
+}
+
+- (void)tryDirectSendEvent:(CGPoint)location phase:(UITouchPhase)phase window:(UIWindow *)window {
+    NSLog(@"[TouchPlayer] Method 1: Direct sendEvent");
     
-    if (!UITouchClass || !UIEventClass) {
-        NSLog(@"[TouchPlayer] Failed to get UITouch or UIEvent class");
+    // 创建 UITouch
+    UITouch *touch = [[UITouch alloc] init];
+    [touch setPhase:phase];
+    [touch setWindow:window];
+    [touch setTapCount:1];
+    
+    // 设置触摸位置
+    SEL setLocationSel = @selector(setLocationInWindow:);
+    if ([touch respondsToSelector:setLocationSel]) {
+        [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
+    }
+    
+    // 创建 UIEvent
+    UIEvent *event = [[UIEvent alloc] init];
+    SEL setWindowEventSel = @selector(setWindow:);
+    if ([event respondsToSelector:setWindowEventSel]) {
+        [event performSelector:setWindowEventSel withObject:window];
+    }
+    
+    // 获取window的sendEvent方法并直接调用
+    SEL sendEventSel = @selector(sendEvent:);
+    if ([window respondsToSelector:sendEventSel]) {
+        NSMethodSignature *sig = [window methodSignatureForSelector:sendEventSel];
+        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
+        [invocation setSelector:sendEventSel];
+        [invocation setTarget:window];
+        [invocation setArgument:&event atIndex:2];
+        [invocation invoke];
+        
+        NSLog(@"[TouchPlayer] Direct sendEvent succeeded");
         return;
     }
     
-    UITouch *touch = [UITouchClass alloc];
-    if (!touch) return;
+    // 备用方法：尝试调用内部方法
+    [self tryInternalTouchInjection:location phase:phase window:window];
+}
+
+- (void)tryInternalTouchInjection:(CGPoint)location phase:(UITouchPhase)phase window:(UIWindow *)window {
+    NSLog(@"[TouchPlayer] Method 2: Internal touch injection");
     
-    SEL initSel = NSSelectorFromString(@"_initWithView:location:");
-    if ([touch respondsToSelector:initSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        touch = [touch performSelector:initSel withObject:window withObject:[NSValue valueWithCGPoint:location]];
-#pragma clang diagnostic pop
-    } else {
-        touch = [touch init];
+    // 查找点击位置下的视图
+    UIView *hitView = [window hitTest:location withEvent:nil];
+    if (!hitView) {
+        NSLog(@"[TouchPlayer] No view found at location");
+        return;
     }
     
-    SEL setPhaseSel = NSSelectorFromString(@"setPhase:");
-    if ([touch respondsToSelector:setPhaseSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setPhaseSel withObject:@(phase)];
-#pragma clang diagnostic pop
+    NSLog(@"[TouchPlayer] Hit view: %@", hitView);
+    
+    // 创建触摸对象
+    UITouch *touch = [[UITouch alloc] init];
+    [touch setPhase:phase];
+    [touch setWindow:window];
+    [touch setTapCount:1];
+    
+    // 设置触摸位置
+    SEL setLocationSel = @selector(setLocationInWindow:);
+    if ([touch respondsToSelector:setLocationSel]) {
+        [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
     }
     
-    SEL setLocationInWindowSel = NSSelectorFromString(@"_setLocationInWindow:");
-    if ([touch respondsToSelector:setLocationInWindowSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setLocationInWindowSel withObject:[NSValue valueWithCGPoint:location]];
-#pragma clang diagnostic pop
+    // 创建事件
+    UIEvent *event = [[UIEvent alloc] init];
+    SEL setWindowEventSel = @selector(setWindow:);
+    if ([event respondsToSelector:setWindowEventSel]) {
+        [event performSelector:setWindowEventSel withObject:window];
     }
     
-    SEL setWindowSel = NSSelectorFromString(@"setWindow:");
-    if ([touch respondsToSelector:setWindowSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setWindowSel withObject:window];
-#pragma clang diagnostic pop
-    }
+    // 直接调用视图的触摸处理方法
+    NSMutableArray *touches = [NSMutableArray arrayWithObject:touch];
     
-    UIEvent *event = [UIEventClass alloc];
-    SEL eventInitSel = NSSelectorFromString(@"_initWithEventSubtype:timestamp:");
-    if ([event respondsToSelector:eventInitSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        event = [event performSelector:eventInitSel withObject:@(UIEventSubtypeNone) withObject:@([[NSDate date] timeIntervalSince1970])];
-#pragma clang diagnostic pop
-    } else {
-        event = [event init];
-    }
-    
-    SEL setTouchesSel = NSSelectorFromString(@"_setTouches:");
-    if ([event respondsToSelector:setTouchesSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [event performSelector:setTouchesSel withObject:@[touch]];
-#pragma clang diagnostic pop
-    }
-    
-    SEL setWindowSel2 = NSSelectorFromString(@"_setWindow:");
-    if ([event respondsToSelector:setWindowSel2]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [event performSelector:setWindowSel2 withObject:window];
-#pragma clang diagnostic pop
-    }
-    
-    SEL sendEventSel = @selector(sendEvent:);
-    if ([window respondsToSelector:sendEventSel]) {
-        [window sendEvent:event];
+    if (phase == UITouchPhaseBegan) {
+        if ([hitView respondsToSelector:@selector(touchesBegan:withEvent:)]) {
+            [hitView touchesBegan:touches withEvent:event];
+            NSLog(@"[TouchPlayer] Called touchesBegan:");
+        }
+    } else if (phase == UITouchPhaseMoved) {
+        if ([hitView respondsToSelector:@selector(touchesMoved:withEvent:)]) {
+            [hitView touchesMoved:touches withEvent:event];
+            NSLog(@"[TouchPlayer] Called touchesMoved:");
+        }
+    } else if (phase == UITouchPhaseEnded) {
+        if ([hitView respondsToSelector:@selector(touchesEnded:withEvent:)]) {
+            [hitView touchesEnded:touches withEvent:event];
+            NSLog(@"[TouchPlayer] Called touchesEnded:");
+        }
+    } else if (phase == UITouchPhaseCancelled) {
+        if ([hitView respondsToSelector:@selector(touchesCancelled:withEvent:)]) {
+            [hitView touchesCancelled:touches withEvent:event];
+            NSLog(@"[TouchPlayer] Called touchesCancelled:");
+        }
     }
 }
 

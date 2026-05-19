@@ -147,11 +147,32 @@
         [dictArray addObject:event.toDictionary];
     }
     
-    NSDictionary *rootDict = @{
-        @"version": @"1.0",
-        @"recordedAt": @([[NSDate date] timeIntervalSince1970]),
-        @"eventCount": @(dictArray.count),
-        @"events": dictArray
+    NSMutableDictionary *rootDict = [NSMutableDictionary dictionary];
+    
+    // Version 2.0
+    rootDict[@"version"] = @"2.0";
+    rootDict[@"recordedAt"] = @([[NSDate date] timeIntervalSince1970]);
+    rootDict[@"eventCount"] = @(dictArray.count);
+    rootDict[@"events"] = dictArray;
+    
+    // App info
+    NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
+    NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
+    if (!appName) {
+        appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+    }
+    rootDict[@"app"] = @{
+        @"bundleId": bundleId ?: @"",
+        @"appName": appName ?: @""
+    };
+    
+    // Screen info
+    UIScreen *mainScreen = [UIScreen mainScreen];
+    CGRect bounds = mainScreen.bounds;
+    rootDict[@"screen"] = @{
+        @"width": @(bounds.size.width),
+        @"height": @(bounds.size.height),
+        @"scale": @(mainScreen.scale)
     };
     
     NSError *error = nil;

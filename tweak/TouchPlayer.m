@@ -1,6 +1,5 @@
 #import "TouchPlayer.h"
-#include <objc/runtime.h>
-#include <CoreFoundation/CoreFoundation.h>
+#import <WebKit/WebKit.h>
 
 @interface TouchPlayer ()
 
@@ -12,7 +11,6 @@
 @property (nonatomic, strong) dispatch_queue_t playbackQueue;
 @property (nonatomic, strong) dispatch_source_t timerSource;
 @property (nonatomic, assign) NSTimeInterval startTime;
-@property (nonatomic, assign) uint64_t lastTouchId;
 
 @end
 
@@ -39,7 +37,6 @@
         _isPlaying = NO;
         _isPaused = NO;
         _waitTimeAfterFinish = 0.0;
-        _lastTouchId = (uint64_t)arc4random();
     }
     return self;
 }
@@ -189,205 +186,264 @@
     
     NSLog(@"[TouchPlayer] Injecting event at (%f, %f), type: %ld", location.x, location.y, (long)event.type);
     
-    [self injectTouchAtLocation:location withType:event.type];
+    [self triggerTouchAtLocation:location withType:event.type];
 }
 
-- (void)injectTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
+- (void)triggerTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
     UIWindow *keyWindow = [self getKeyWindow];
     if (!keyWindow) {
         NSLog(@"[TouchPlayer] No key window found");
         return;
     }
     
-    CGSize screenSize = keyWindow.screen.bounds.size;
-    
-    // 尝试多种注入方式
-    BOOL success = NO;
-    
-    // 方法1: 使用 UIApplication 的私有方法
-    success = [self simulateTouchWithUIApplication:location type:type];
-    
-    if (!success) {
-        // 方法2: 使用系统事件注入
-        success = [self simulateTouchWithSystemEvent:location type:type];
+    // 使用 hitTest 定位目标视图
+    UIView *hitView = [keyWindow hitTest:location withEvent:nil];
+    if (!hitView) {
+        NSLog(@"[TouchPlayer] No view found at location (%f, %f)", location.x, location.y);
+        return;
     }
     
-    if (!success) {
-        // 方法3: 使用视图层级直接触发
-        success = [self simulateTouchWithHitTest:location type:type];
+    NSLog(@"[TouchPlayer] Hit view: %@", hitView);
+    
+    // 根据视图类型触发相应行为
+    [self triggerActionForView:hitView atLocation:location type:type];
+}
+
+- (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type {
+    // 检查是否是结束事件（TouchUpInside）
+    BOOL isTouchUp = (type == TouchEventTypeEnded);
+    
+    // 1. 尝试触发 UIButton
+    if ([self triggerUIButtonAction:view isTouchUp:isTouchUp]) {
+        NSLog(@"[TouchPlayer] Triggered UIButton action");
+        return;
     }
     
-    if (!success) {
-        NSLog(@"[TouchPlayer] All injection methods failed for location (%f, %f)", location.x, location.y);
+    // 2. 尝试触发 UIControl
+    if ([self triggerUIControlAction:view isTouchUp:isTouchUp]) {
+        NSLog(@"[TouchPlayer] Triggered UIControl action");
+        return;
+    }
+    
+    // 3. 尝试触发 UITableView
+    if ([self triggerUITableViewAction:view atLocation:location]) {
+        NSLog(@"[TouchPlayer] Triggered UITableView action");
+        return;
+    }
+    
+    // 4. 尝试触发 UICollectionView
+    if ([self triggerUICollectionViewAction:view atLocation:location]) {
+        NSLog(@"[TouchPlayer] Triggered UICollectionView action");
+        return;
+    }
+    
+    // 5. 尝试触发 UIScrollView
+    if ([self triggerUIScrollViewAction:view atLocation:location]) {
+        NSLog(@"[TouchPlayer] Triggered UIScrollView action");
+        return;
+    }
+    
+    // 6. 尝试触发 WKWebView
+    if ([self triggerWKWebViewAction:view atLocation:location]) {
+        NSLog(@"[TouchPlayer] Triggered WKWebView action");
+        return;
+    }
+    
+    // 7. 尝试查找父级视图中的可交互控件
+    if (view.superview) {
+        [self triggerActionForView:view.superview atLocation:location type:type];
     }
 }
 
-- (BOOL)simulateTouchWithUIApplication:(CGPoint)location type:(TouchEventType)type {
-    @try {
-        UIApplication *app = [UIApplication sharedApplication];
-        
-        // 尝试使用 _sendTouchesForEvent: 方法
-        SEL sendTouchesSel = NSSelectorFromString(@"_sendTouchesForEvent:");
-        if (![app respondsToSelector:sendTouchesSel]) {
-            NSLog(@"[TouchPlayer] _sendTouchesForEvent: not available");
-            return NO;
-        }
-        
-        // 创建触摸事件
-        UIEvent *event = [self createSystemEventWithLocation:location type:type];
-        if (!event) {
-            NSLog(@"[TouchPlayer] Failed to create system event");
-            return NO;
-        }
-        
-        NSMethodSignature *sig = [app methodSignatureForSelector:sendTouchesSel];
-        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
-        [invocation setSelector:sendTouchesSel];
-        [invocation setTarget:app];
-        [invocation setArgument:&event atIndex:2];
-        [invocation invoke];
-        
+- (BOOL)triggerUIButtonAction:(UIView *)view isTouchUp:(BOOL)isTouchUp {
+    if (![view isKindOfClass:[UIButton class]]) {
+        return NO;
+    }
+    
+    UIButton *button = (UIButton *)view;
+    
+    if (isTouchUp) {
+        // 触发按钮点击
+        [button sendActionsForControlEvents:UIControlEventTouchUpInside];
         return YES;
     }
-    @catch (NSException *e) {
-        NSLog(@"[TouchPlayer] simulateTouchWithUIApplication failed: %@", e);
-        return NO;
-    }
+    
+    return NO;
 }
 
-- (BOOL)simulateTouchWithSystemEvent:(CGPoint)location type:(TouchEventType)type {
-    @try {
-        UIApplication *app = [UIApplication sharedApplication];
-        
-        // 尝试使用 _postEvent: 方法
-        SEL postEventSel = NSSelectorFromString(@"_postEvent:");
-        if (![app respondsToSelector:postEventSel]) {
-            NSLog(@"[TouchPlayer] _postEvent: not available");
-            return NO;
-        }
-        
-        UIEvent *event = [self createSystemEventWithLocation:location type:type];
-        if (!event) {
-            NSLog(@"[TouchPlayer] Failed to create system event");
-            return NO;
-        }
-        
-        NSMethodSignature *sig = [app methodSignatureForSelector:postEventSel];
-        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
-        [invocation setSelector:postEventSel];
-        [invocation setTarget:app];
-        [invocation setArgument:&event atIndex:2];
-        [invocation invoke];
-        
+- (BOOL)triggerUIControlAction:(UIView *)view isTouchUp:(BOOL)isTouchUp {
+    if (![view isKindOfClass:[UIControl class]]) {
+        return NO;
+    }
+    
+    UIControl *control = (UIControl *)view;
+    
+    if (isTouchUp) {
+        // 触发所有触摸事件
+        [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+        [control sendActionsForControlEvents:UIControlEventValueChanged];
         return YES;
     }
-    @catch (NSException *e) {
-        NSLog(@"[TouchPlayer] simulateTouchWithSystemEvent failed: %@", e);
-        return NO;
-    }
+    
+    return NO;
 }
 
-- (BOOL)simulateTouchWithHitTest:(CGPoint)location type:(TouchEventType)type {
-    @try {
-        UIWindow *window = [self getKeyWindow];
-        if (!window) {
-            NSLog(@"[TouchPlayer] No window for hit test");
-            return NO;
+- (BOOL)triggerUITableViewAction:(UIView *)view atLocation:(CGPoint)location {
+    // 查找父级 UITableView
+    UIView *superview = view;
+    UITableView *tableView = nil;
+    
+    while (superview) {
+        if ([superview isKindOfClass:[UITableView class]]) {
+            tableView = (UITableView *)superview;
+            break;
         }
-        
-        // 使用 hitTest 找到目标视图
-        UIView *hitView = [window hitTest:location withEvent:nil];
-        if (!hitView) {
-            NSLog(@"[TouchPlayer] No view found at location");
-            return NO;
-        }
-        
-        NSLog(@"[TouchPlayer] Hit view: %@", hitView);
-        
-        // 尝试直接调用按钮方法
-        if ([hitView respondsToSelector:@selector(sendActionsForControlEvents:)]) {
-            [hitView sendActionsForControlEvents:UIControlEventTouchUpInside];
-            return YES;
-        }
-        
-        // 尝试发送点击事件
-        SEL tapSel = NSSelectorFromString(@"touchesEnded:withEvent:");
-        if ([hitView respondsToSelector:tapSel]) {
-            NSSet *touches = [NSSet set];
-            UIEvent *event = [[UIEvent alloc] init];
-            [hitView performSelector:tapSel withObject:touches withObject:event];
-            return YES;
-        }
-        
+        superview = superview.superview;
+    }
+    
+    if (!tableView) {
         return NO;
     }
-    @catch (NSException *e) {
-        NSLog(@"[TouchPlayer] simulateTouchWithHitTest failed: %@", e);
+    
+    // 转换坐标
+    CGPoint tableViewLocation = [tableView convertPoint:location fromView:view];
+    
+    // 获取 indexPath
+    NSIndexPath *indexPath = [tableView indexPathForRowAtPoint:tableViewLocation];
+    if (!indexPath) {
+        NSLog(@"[TouchPlayer] No indexPath found at location");
         return NO;
     }
+    
+    NSLog(@"[TouchPlayer] TableView cell at indexPath: %@", indexPath);
+    
+    // 尝试触发 delegate
+    if ([tableView.delegate respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
+        [tableView.delegate tableView:tableView didSelectRowAtIndexPath:indexPath];
+        return YES;
+    }
+    
+    // 尝试直接选中单元格
+    [tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
+    
+    // 尝试触发 didSelectRow 通知
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"UITableViewDidSelectRowNotification" 
+                                                        object:tableView 
+                                                      userInfo:@{@"indexPath": indexPath}];
+    
+    return YES;
 }
 
-- (UIEvent *)createSystemEventWithLocation:(CGPoint)location type:(TouchEventType)type {
-    // 获取 UITouch 类
-    Class UITouchClass = NSClassFromString(@"UITouch");
-    Class UIEventClass = NSClassFromString(@"UIEvent");
+- (BOOL)triggerUICollectionViewAction:(UIView *)view atLocation:(CGPoint)location {
+    // 查找父级 UICollectionView
+    UIView *superview = view;
+    UICollectionView *collectionView = nil;
     
-    if (!UITouchClass || !UIEventClass) {
-        NSLog(@"[TouchPlayer] UITouch or UIEvent class not found");
-        return nil;
+    while (superview) {
+        if ([superview isKindOfClass:[UICollectionView class]]) {
+            collectionView = (UICollectionView *)superview;
+            break;
+        }
+        superview = superview.superview;
     }
     
-    // 使用 NSInvocation 创建 UITouch
-    SEL touchInitSel = NSSelectorFromString(@"_initWithView:location:");
-    if (![UITouchClass instancesRespondToSelector:touchInitSel]) {
-        touchInitSel = NSSelectorFromString(@"init");
+    if (!collectionView) {
+        return NO;
     }
     
-    UITouch *touch = [[UITouchClass alloc] performSelector:touchInitSel];
-    if (!touch) {
-        NSLog(@"[TouchPlayer] Failed to create UITouch");
-        return nil;
+    // 转换坐标
+    CGPoint collectionViewLocation = [collectionView convertPoint:location fromView:view];
+    
+    // 获取 indexPath
+    NSIndexPath *indexPath = [collectionView indexPathForItemAtPoint:collectionViewLocation];
+    if (!indexPath) {
+        NSLog(@"[TouchPlayer] No indexPath found at location");
+        return NO;
     }
     
-    // 设置触摸属性
-    SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
-    if ([touch respondsToSelector:setLocationSel]) {
-        [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
+    NSLog(@"[TouchPlayer] CollectionView cell at indexPath: %@", indexPath);
+    
+    // 尝试触发 delegate
+    if ([collectionView.delegate respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
+        [collectionView.delegate collectionView:collectionView didSelectItemAtIndexPath:indexPath];
+        return YES;
     }
     
-    SEL setPhaseSel = NSSelectorFromString(@"_setPhase:");
-    if ([touch respondsToSelector:setPhaseSel]) {
-        UITouchPhase phase = UITouchPhaseBegan;
-        if (type == TouchEventTypeMoved) phase = UITouchPhaseMoved;
-        else if (type == TouchEventTypeEnded) phase = UITouchPhaseEnded;
-        else if (type == TouchEventTypeCancelled) phase = UITouchPhaseCancelled;
-        [touch performSelector:setPhaseSel withObject:@(phase)];
+    // 尝试直接选中单元格
+    [collectionView selectItemAtIndexPath:indexPath animated:NO scrollPosition:UICollectionViewScrollPositionNone];
+    
+    return YES;
+}
+
+- (BOOL)triggerUIScrollViewAction:(UIView *)view atLocation:(CGPoint)location {
+    // 查找父级 UIScrollView
+    UIView *superview = view;
+    UIScrollView *scrollView = nil;
+    
+    while (superview) {
+        if ([superview isKindOfClass:[UIScrollView class]] && 
+            ![superview isKindOfClass:[UITableView class]] && 
+            ![superview isKindOfClass:[UICollectionView class]]) {
+            scrollView = (UIScrollView *)superview;
+            break;
+        }
+        superview = superview.superview;
     }
     
-    SEL setWindowSel = NSSelectorFromString(@"_setWindow:");
-    if ([touch respondsToSelector:setWindowSel]) {
-        [touch performSelector:setWindowSel withObject:[self getKeyWindow]];
+    if (!scrollView) {
+        return NO;
     }
     
-    SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
-    if ([touch respondsToSelector:setTapCountSel]) {
-        [touch performSelector:setTapCountSel withObject:@1];
+    NSLog(@"[TouchPlayer] ScrollView found");
+    
+    // 滚动到点击位置
+    CGPoint contentOffset = scrollView.contentOffset;
+    contentOffset.x += (scrollView.bounds.size.width / 2 - location.x);
+    contentOffset.y += (scrollView.bounds.size.height / 2 - location.y);
+    
+    [scrollView setContentOffset:contentOffset animated:YES];
+    
+    return YES;
+}
+
+- (BOOL)triggerWKWebViewAction:(UIView *)view atLocation:(CGPoint)location {
+    // 查找 WKWebView
+    UIView *superview = view;
+    WKWebView *webView = nil;
+    
+    while (superview) {
+        if ([superview isKindOfClass:[WKWebView class]]) {
+            webView = (WKWebView *)superview;
+            break;
+        }
+        superview = superview.superview;
     }
     
-    // 创建 UIEvent
-    UIEvent *event = [[UIEventClass alloc] init];
-    
-    SEL setTouchesSel = NSSelectorFromString(@"_setTouches:");
-    if ([event respondsToSelector:setTouchesSel]) {
-        [event performSelector:setTouchesSel withObject:[NSSet setWithObject:touch]];
+    if (!webView) {
+        return NO;
     }
     
-    SEL setTypeSel = NSSelectorFromString(@"_setType:");
-    if ([event respondsToSelector:setTypeSel]) {
-        [event performSelector:setTypeSel withObject:@(UIEventTypeTouches)];
-    }
+    NSLog(@"[TouchPlayer] WKWebView found");
     
-    return event;
+    // 转换坐标为 web view 坐标
+    CGPoint webViewLocation = [webView convertPoint:location fromView:view];
+    
+    // 构建 JavaScript 点击代码
+    NSString *javascript = [NSString stringWithFormat:
+        @"document.elementFromPoint(%f, %f).click();", 
+        webViewLocation.x, 
+        webViewLocation.y];
+    
+    // 执行 JavaScript
+    [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[TouchPlayer] JavaScript error: %@", error);
+        } else {
+            NSLog(@"[TouchPlayer] JavaScript executed successfully");
+        }
+    }];
+    
+    return YES;
 }
 
 - (UIWindow *)getKeyWindow {

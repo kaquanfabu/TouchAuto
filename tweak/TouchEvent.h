@@ -23,6 +23,12 @@ typedef NS_ENUM(NSInteger, TouchEventType) {
 @property (nonatomic, assign) CGFloat pressure;
 @property (nonatomic, assign) CGRect bounds;
 
+// View metadata properties
+@property (nonatomic, strong) NSString *viewClass;
+@property (nonatomic, strong) NSString *accessibilityIdentifier;
+@property (nonatomic, strong) NSString *accessibilityLabel;
+@property (nonatomic, strong) NSArray *superviewChain;
+
 - (instancetype)initWithTouch:(UITouch *)touch event:(UIEvent *)event;
 - (NSDictionary *)toDictionary;
 + (TouchEvent *)fromDictionary:(NSDictionary *)dict;

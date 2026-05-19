@@ -131,20 +131,71 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
     [formatter setDateFormat:@"yyyyMMdd_HHmmss"];
     NSString *fileName = [NSString stringWithFormat:@"TouchAuto_%@.json", [formatter stringFromDate:[NSDate date]]];
     
+    // Create save directory: Documents/TouchAuto/
+    NSString *docsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *saveDir = [docsPath stringByAppendingPathComponent:@"TouchAuto"];
+    
+    // Create directory if not exists
+    NSError *dirError = nil;
+    [[NSFileManager defaultManager] createDirectoryAtPath:saveDir withIntermediateDirectories:YES attributes:nil error:&dirError];
+    if (dirError) {
+        NSLog(@"[TouchAuto] Failed to create directory: %@", dirError);
+        [self showAlertWithTitle:@"保存失败" message:@"无法创建保存目录"];
+        return;
+    }
+    
+    NSString *filePath = [saveDir stringByAppendingPathComponent:fileName];
+    
     NSMutableDictionary *scriptData = [NSMutableDictionary dictionary];
-    scriptData[@"version"] = @"1.0";
+    
+    // Version 2.0
+    scriptData[@"version"] = @"2.0";
     scriptData[@"createdAt"] = [[NSDate date] description];
     scriptData[@"eventCount"] = @(recorder.recordedEvents.count);
+    
+    // App info
+    NSDictionary *appInfo = [self getAppInfo];
+    scriptData[@"app"] = appInfo;
+    
+    // Screen info
+    NSDictionary *screenInfo = [self getScreenInfo];
+    scriptData[@"screen"] = screenInfo;
+    
+    // Events with metadata
     scriptData[@"events"] = [self serializeEvents:recorder.recordedEvents];
     
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:scriptData options:NSJSONWritingPrettyPrinted error:nil];
-    NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:fileName];
     
-    if ([jsonData writeToFile:tempPath atomically:YES]) {
-        [self exportFileToFilesApp:tempPath fileName:fileName];
+    if ([jsonData writeToFile:filePath atomically:YES]) {
+        [self showAlertWithTitle:@"保存成功" message:[NSString stringWithFormat:@"脚本已保存到:\n%@", filePath]];
+        [self exportFileToFilesApp:filePath fileName:fileName];
     } else {
-        [self showAlertWithTitle:@"保存失败" message:@"无法创建临时文件"];
+        [self showAlertWithTitle:@"保存失败" message:@"无法保存文件"];
     }
+}
+
++ (NSDictionary *)getAppInfo {
+    NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
+    NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
+    if (!appName) {
+        appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+    }
+    
+    return @{
+        @"bundleId": bundleId ?: @"",
+        @"appName": appName ?: @""
+    };
+}
+
++ (NSDictionary *)getScreenInfo {
+    UIScreen *mainScreen = [UIScreen mainScreen];
+    CGRect bounds = mainScreen.bounds;
+    
+    return @{
+        @"width": @(bounds.size.width),
+        @"height": @(bounds.size.height),
+        @"scale": @(mainScreen.scale)
+    };
 }
 
 + (NSArray *)serializeEvents:(NSArray *)events {

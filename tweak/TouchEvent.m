@@ -38,8 +38,42 @@
             _bounds = touch.window.bounds;
             NSLog(@"[TouchEvent] Window bounds: %@", NSStringFromCGRect(_bounds));
         }
+        
+        // Capture view metadata
+        [self captureViewMetadata:touch.view];
     }
     return self;
+}
+
+- (void)captureViewMetadata:(UIView *)view {
+    if (!view) return;
+    
+    // View class name
+    _viewClass = NSStringFromClass([view class]);
+    
+    // Accessibility identifier
+    if (view.accessibilityIdentifier) {
+        _accessibilityIdentifier = view.accessibilityIdentifier;
+    }
+    
+    // Accessibility label
+    if (view.accessibilityLabel) {
+        _accessibilityLabel = view.accessibilityLabel;
+    }
+    
+    // Superview chain (index path)
+    NSMutableArray *chain = [NSMutableArray array];
+    UIView *currentView = view;
+    while (currentView) {
+        UIView *superview = currentView.superview;
+        if (superview) {
+            NSUInteger index = [superview.subviews indexOfObject:currentView];
+            NSString *entry = [NSString stringWithFormat:@"%@:%lu", NSStringFromClass([currentView class]), (unsigned long)index];
+            [chain addObject:entry];
+        }
+        currentView = superview;
+    }
+    _superviewChain = chain;
 }
 
 - (void)encodeWithCoder:(NSCoder *)coder {
@@ -54,6 +88,12 @@
     [coder encodeObject:_touchIdentifier forKey:@"touchIdentifier"];
     [coder encodeFloat:_pressure forKey:@"pressure"];
     [coder encodeCGRect:_bounds forKey:@"bounds"];
+    
+    // Encode view metadata
+    [coder encodeObject:_viewClass forKey:@"viewClass"];
+    [coder encodeObject:_accessibilityIdentifier forKey:@"accessibilityIdentifier"];
+    [coder encodeObject:_accessibilityLabel forKey:@"accessibilityLabel"];
+    [coder encodeObject:_superviewChain forKey:@"superviewChain"];
 }
 
 - (instancetype)initWithCoder:(NSCoder *)coder {
@@ -69,6 +109,12 @@
         _touchIdentifier = [coder decodeObjectForKey:@"touchIdentifier"];
         _pressure = [coder decodeFloatForKey:@"pressure"];
         _bounds = [coder decodeCGRectForKey:@"bounds"];
+        
+        // Decode view metadata
+        _viewClass = [coder decodeObjectForKey:@"viewClass"];
+        _accessibilityIdentifier = [coder decodeObjectForKey:@"accessibilityIdentifier"];
+        _accessibilityLabel = [coder decodeObjectForKey:@"accessibilityLabel"];
+        _superviewChain = [coder decodeObjectForKey:@"superviewChain"];
     }
     return self;
 }
@@ -86,7 +132,11 @@
         @"touchIdentifier": _touchIdentifier ?: @0,
         @"pressure": @(_pressure),
         @"bounds": @{@"x": @(_bounds.origin.x), @"y": @(_bounds.origin.y),
-                     @"width": @(_bounds.size.width), @"height": @(_bounds.size.height)}
+                     @"width": @(_bounds.size.width), @"height": @(_bounds.size.height)},
+        @"viewClass": _viewClass ?: @"",
+        @"accessibilityIdentifier": _accessibilityIdentifier ?: @"",
+        @"accessibilityLabel": _accessibilityLabel ?: @"",
+        @"superviewChain": _superviewChain ?: @[]
     };
 }
 
@@ -100,7 +150,11 @@
     event.location = CGPointMake([locDict[@"x"] doubleValue], [locDict[@"y"] doubleValue]);
     
     NSDictionary *prevLocDict = dict[@"previousLocation"];
-    event.previousLocation = CGPointMake([prevLocDict[@"x"] doubleValue], [prevLocDict[@"y"] doubleValue]);
+    if (prevLocDict) {
+        event.previousLocation = CGPointMake([prevLocDict[@"x"] doubleValue], [prevLocDict[@"y"] doubleValue]);
+    } else {
+        event.previousLocation = event.location;
+    }
     
     event.tapCount = [dict[@"tapCount"] integerValue];
     event.isLongPress = [dict[@"isLongPress"] boolValue];
@@ -109,8 +163,18 @@
     event.pressure = [dict[@"pressure"] floatValue];
     
     NSDictionary *boundsDict = dict[@"bounds"];
-    event.bounds = CGRectMake([boundsDict[@"x"] doubleValue], [boundsDict[@"y"] doubleValue],
-                              [boundsDict[@"width"] doubleValue], [boundsDict[@"height"] doubleValue]);
+    if (boundsDict) {
+        event.bounds = CGRectMake([boundsDict[@"x"] doubleValue], [boundsDict[@"y"] doubleValue],
+                                  [boundsDict[@"width"] doubleValue], [boundsDict[@"height"] doubleValue]);
+    } else {
+        event.bounds = [UIScreen mainScreen].bounds;
+    }
+    
+    // Parse view metadata (compatible with v1.0 which doesn't have these fields)
+    event.viewClass = dict[@"viewClass"];
+    event.accessibilityIdentifier = dict[@"accessibilityIdentifier"];
+    event.accessibilityLabel = dict[@"accessibilityLabel"];
+    event.superviewChain = dict[@"superviewChain"] ?: @[];
     
     return event;
 }

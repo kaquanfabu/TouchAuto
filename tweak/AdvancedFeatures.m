@@ -1,5 +1,6 @@
 #import "AdvancedFeatures.h"
 #import <ImageIO/ImageIO.h>
+#import <WebKit/WebKit.h>
 
 @interface AdvancedFeatures ()
 
@@ -303,14 +304,14 @@
         
         if ([command isEqualToString:@"tap"]) {
             CGPoint point = CGPointMake([action[@"x"] doubleValue], [action[@"y"] doubleValue]);
-            [self performSelector:@selector(simulateTap:) withObject:[NSValue valueWithCGPoint:point] afterDelay:0];
+            [self triggerTouchAtLocation:point];
         } else if ([command isEqualToString:@"delay"]) {
             NSTimeInterval delay = [action[@"time"] doubleValue];
             usleep((useconds_t)(delay * 1000000));
         } else if ([command isEqualToString:@"swipe"]) {
             CGPoint from = CGPointMake([action[@"x1"] doubleValue], [action[@"y1"] doubleValue]);
             CGPoint to = CGPointMake([action[@"x2"] doubleValue], [action[@"y2"] doubleValue]);
-            [self simulateSwipe:[NSValue valueWithCGPoint:from] to:[NSValue valueWithCGPoint:to]];
+            [self triggerSwipeFrom:from to:to];
         } else if ([command isEqualToString:@"waitForColor"]) {
             UIColor *color = [UIColor colorWithRed:[action[@"r"] doubleValue] green:[action[@"g"] doubleValue] blue:[action[@"b"] doubleValue] alpha:1.0];
             NSTimeInterval timeout = [action[@"timeout"] doubleValue];
@@ -326,14 +327,239 @@
     return YES;
 }
 
-- (void)simulateTap:(NSValue *)pointValue {
-    CGPoint point = [pointValue CGPointValue];
-    (void)point;
-    [[UIApplication sharedApplication] sendAction:@selector(touchesBegan:withEvent:) to:nil from:nil forEvent:nil];
+- (void)triggerTouchAtLocation:(CGPoint)location {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = [self getKeyWindow];
+        if (!keyWindow) {
+            NSLog(@"[AdvancedFeatures] No key window found");
+            return;
+        }
+        
+        UIView *hitView = [keyWindow hitTest:location withEvent:nil];
+        if (!hitView) {
+            NSLog(@"[AdvancedFeatures] No view found at location (%f, %f)", location.x, location.y);
+            return;
+        }
+        
+        NSLog(@"[AdvancedFeatures] Hit view: %@", hitView);
+        
+        [self triggerActionForView:hitView atLocation:location];
+    });
 }
 
-- (void)simulateSwipe:(NSValue *)fromValue to:(NSValue *)toValue {
+- (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location {
+    if ([self triggerUIButtonAction:view]) {
+        NSLog(@"[AdvancedFeatures] Triggered UIButton action");
+        return;
+    }
     
+    if ([self triggerUIControlAction:view]) {
+        NSLog(@"[AdvancedFeatures] Triggered UIControl action");
+        return;
+    }
+    
+    if ([self triggerUITableViewAction:view atLocation:location]) {
+        NSLog(@"[AdvancedFeatures] Triggered UITableView action");
+        return;
+    }
+    
+    if ([self triggerUICollectionViewAction:view atLocation:location]) {
+        NSLog(@"[AdvancedFeatures] Triggered UICollectionView action");
+        return;
+    }
+    
+    if ([self triggerWKWebViewAction:view atLocation:location]) {
+        NSLog(@"[AdvancedFeatures] Triggered WKWebView action");
+        return;
+    }
+    
+    if (view.superview) {
+        [self triggerActionForView:view.superview atLocation:location];
+    }
+}
+
+- (BOOL)triggerUIButtonAction:(UIView *)view {
+    if (![view isKindOfClass:[UIButton class]]) {
+        return NO;
+    }
+    
+    UIButton *button = (UIButton *)view;
+    [button sendActionsForControlEvents:UIControlEventTouchUpInside];
+    return YES;
+}
+
+- (BOOL)triggerUIControlAction:(UIView *)view {
+    if (![view isKindOfClass:[UIControl class]]) {
+        return NO;
+    }
+    
+    UIControl *control = (UIControl *)view;
+    [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [control sendActionsForControlEvents:UIControlEventValueChanged];
+    return YES;
+}
+
+- (BOOL)triggerUITableViewAction:(UIView *)view atLocation:(CGPoint)location {
+    UIView *superview = view;
+    UITableView *tableView = nil;
+    
+    while (superview) {
+        if ([superview isKindOfClass:[UITableView class]]) {
+            tableView = (UITableView *)superview;
+            break;
+        }
+        superview = superview.superview;
+    }
+    
+    if (!tableView) {
+        return NO;
+    }
+    
+    CGPoint tableViewLocation = [tableView convertPoint:location fromView:view];
+    NSIndexPath *indexPath = [tableView indexPathForRowAtPoint:tableViewLocation];
+    if (!indexPath) {
+        return NO;
+    }
+    
+    if ([tableView.delegate respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
+        [tableView.delegate tableView:tableView didSelectRowAtIndexPath:indexPath];
+        return YES;
+    }
+    
+    [tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
+    return YES;
+}
+
+- (BOOL)triggerUICollectionViewAction:(UIView *)view atLocation:(CGPoint)location {
+    UIView *superview = view;
+    UICollectionView *collectionView = nil;
+    
+    while (superview) {
+        if ([superview isKindOfClass:[UICollectionView class]]) {
+            collectionView = (UICollectionView *)superview;
+            break;
+        }
+        superview = superview.superview;
+    }
+    
+    if (!collectionView) {
+        return NO;
+    }
+    
+    CGPoint collectionViewLocation = [collectionView convertPoint:location fromView:view];
+    NSIndexPath *indexPath = [collectionView indexPathForItemAtPoint:collectionViewLocation];
+    if (!indexPath) {
+        return NO;
+    }
+    
+    if ([collectionView.delegate respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
+        [collectionView.delegate collectionView:collectionView didSelectItemAtIndexPath:indexPath];
+        return YES;
+    }
+    
+    [collectionView selectItemAtIndexPath:indexPath animated:NO scrollPosition:UICollectionViewScrollPositionNone];
+    return YES;
+}
+
+- (BOOL)triggerWKWebViewAction:(UIView *)view atLocation:(CGPoint)location {
+    UIView *superview = view;
+    WKWebView *webView = nil;
+    
+    while (superview) {
+        if ([superview isKindOfClass:[WKWebView class]]) {
+            webView = (WKWebView *)superview;
+            break;
+        }
+        superview = superview.superview;
+    }
+    
+    if (!webView) {
+        return NO;
+    }
+    
+    CGPoint webViewLocation = [webView convertPoint:location fromView:view];
+    
+    NSString *javascript = [NSString stringWithFormat:
+        @"document.elementFromPoint(%f, %f).click();", 
+        webViewLocation.x, 
+        webViewLocation.y];
+    
+    [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[AdvancedFeatures] JavaScript error: %@", error);
+        }
+    }];
+    
+    return YES;
+}
+
+- (void)triggerSwipeFrom:(CGPoint)from to:(CGPoint)to {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = [self getKeyWindow];
+        if (!keyWindow) {
+            NSLog(@"[AdvancedFeatures] No key window found");
+            return;
+        }
+        
+        UIScrollView *scrollView = [self findScrollViewInHierarchy:keyWindow];
+        if (scrollView) {
+            CGPoint contentOffset = scrollView.contentOffset;
+            contentOffset.x += (from.x - to.x);
+            contentOffset.y += (from.y - to.y);
+            
+            [scrollView setContentOffset:contentOffset animated:YES];
+            NSLog(@"[AdvancedFeatures] Swiped scrollView");
+        } else {
+            NSLog(@"[AdvancedFeatures] No scrollView found for swipe");
+        }
+    });
+}
+
+- (UIScrollView *)findScrollViewInHierarchy:(UIView *)view {
+    if ([view isKindOfClass:[UIScrollView class]] && 
+        ![view isKindOfClass:[UITableView class]] && 
+        ![view isKindOfClass:[UICollectionView class]]) {
+        return (UIScrollView *)view;
+    }
+    
+    for (UIView *subview in view.subviews) {
+        UIScrollView *scrollView = [self findScrollViewInHierarchy:subview];
+        if (scrollView) {
+            return scrollView;
+        }
+    }
+    
+    return nil;
+}
+
+- (UIWindow *)getKeyWindow {
+    UIWindow *keyWindow = nil;
+    
+    if (@available(iOS 13.0, *)) {
+        NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene *scene in scenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) {
+                        keyWindow = window;
+                        break;
+                    }
+                }
+                if (keyWindow) break;
+            }
+        }
+    }
+    
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].keyWindow;
+    }
+    
+    return keyWindow;
+}
+
+- (void)dealloc {
+    [self cancelAllScheduledTasks];
 }
 
 @end

@@ -12,6 +12,9 @@ static Class gUIApplicationClass = nil;
 static IMP gOriginalSendEvent = NULL;
 static IMP gOriginalApplicationDidBecomeActive = NULL;
 
+static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
+static void swizzledApplicationDidBecomeActive(id self, SEL _cmd, UIApplication *application);
+
 @interface TouchAuto : NSObject
 
 + (void)load;
@@ -110,13 +113,14 @@ static IMP gOriginalApplicationDidBecomeActive = NULL;
 }
 
 + (void)setupPlayer {
-    TouchPlayer *player = [TouchPlayer sharedInstance];
+    __weak TouchPlayer *weakPlayer = [TouchPlayer sharedInstance];
     
-    player.stateChangeBlock = ^(BOOL isPlaying) {
-        [[FloatingPanel sharedInstance] updatePlaybackState:isPlaying isPaused:player.isPaused];
+    weakPlayer.stateChangeBlock = ^(BOOL isPlaying) {
+        __strong TouchPlayer *strongPlayer = weakPlayer;
+        [[FloatingPanel sharedInstance] updatePlaybackState:isPlaying isPaused:strongPlayer.isPaused];
     };
     
-    player.progressBlock = ^(NSUInteger currentIndex, NSUInteger totalCount) {
+    weakPlayer.progressBlock = ^(NSUInteger currentIndex, NSUInteger totalCount) {
         [[FloatingPanel sharedInstance] updateProgress:currentIndex totalCount:totalCount];
     };
 }
@@ -199,8 +203,9 @@ static IMP gOriginalApplicationDidBecomeActive = NULL;
     
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.placeholder = @"tap 100 200\ndelay 1.0\nswipe 50 300 250 300";
-        textField.multiline = YES;
         textField.text = @"tap 100 200\ndelay 0.5\nswipe 100 300 300 300";
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
     }];
     
     [alert addAction:[UIAlertAction actionWithTitle:@"执行" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {

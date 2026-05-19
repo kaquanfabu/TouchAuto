@@ -62,6 +62,9 @@
     
     [self addSubview:_contentView];
     
+    CGFloat panelWidth = 60;
+    [_contentView.widthAnchor constraintEqualToConstant:panelWidth].active = YES;
+    
     CGFloat buttonSize = 44;
     CGFloat padding = 8;
     
@@ -199,6 +202,21 @@
 }
 
 - (void)show {
+    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    if (!keyWindow) {
+        NSArray *windows = [UIApplication sharedApplication].windows;
+        if (windows.count > 0) {
+            keyWindow = windows[0];
+        }
+    }
+    
+    if (!keyWindow) return;
+    
+    if (self.superview != keyWindow) {
+        [self removeFromSuperview];
+        [keyWindow addSubview:self];
+    }
+    
     if (self.hidden) {
         self.hidden = NO;
         _isVisible = YES;

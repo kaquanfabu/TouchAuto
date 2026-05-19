@@ -61,7 +61,7 @@
     UIGraphicsBeginImageContextWithOptions(region.size, NO, [UIScreen mainScreen].scale);
     
     CGContextRef context = UIGraphicsGetCurrentContext();
-    [context translateCTM(-region.origin.x, -region.origin.y)];
+    CGContextTranslateCTM(context, -region.origin.x, -region.origin.y);
     
     [[UIApplication sharedApplication].keyWindow drawViewHierarchyInRect:[UIScreen mainScreen].bounds afterScreenUpdates:YES];
     
@@ -234,6 +234,7 @@
             langCode = @"en-US";
     }
     
+    (void)langCode;
     return @"OCR result placeholder";
 }
 
@@ -309,7 +310,7 @@
         } else if ([command isEqualToString:@"swipe"]) {
             CGPoint from = CGPointMake([action[@"x1"] doubleValue], [action[@"y1"] doubleValue]);
             CGPoint to = CGPointMake([action[@"x2"] doubleValue], [action[@"y2"] doubleValue]);
-            [self performSelector:@selector(simulateSwipe:to:) withObject:[NSValue valueWithCGPoint:from] withObject:[NSValue valueWithCGPoint:to] afterDelay:0];
+            [self simulateSwipe:[NSValue valueWithCGPoint:from] to:[NSValue valueWithCGPoint:to]];
         } else if ([command isEqualToString:@"waitForColor"]) {
             UIColor *color = [UIColor colorWithRed:[action[@"r"] doubleValue] green:[action[@"g"] doubleValue] blue:[action[@"b"] doubleValue] alpha:1.0];
             NSTimeInterval timeout = [action[@"timeout"] doubleValue];
@@ -327,6 +328,7 @@
 
 - (void)simulateTap:(NSValue *)pointValue {
     CGPoint point = [pointValue CGPointValue];
+    (void)point;
     [[UIApplication sharedApplication] sendAction:@selector(touchesBegan:withEvent:) to:nil from:nil forEvent:nil];
 }
 

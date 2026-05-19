@@ -1,5 +1,6 @@
 #import "TouchPlayer.h"
 #include <objc/runtime.h>
+#include <CoreFoundation/CoreFoundation.h>
 
 @interface TouchPlayer ()
 
@@ -11,6 +12,7 @@
 @property (nonatomic, strong) dispatch_queue_t playbackQueue;
 @property (nonatomic, strong) dispatch_source_t timerSource;
 @property (nonatomic, assign) NSTimeInterval startTime;
+@property (nonatomic, assign) uint64_t lastTouchId;
 
 @end
 
@@ -37,6 +39,7 @@
         _isPlaying = NO;
         _isPaused = NO;
         _waitTimeAfterFinish = 0.0;
+        _lastTouchId = (uint64_t)arc4random();
     }
     return self;
 }
@@ -122,7 +125,6 @@
         _currentLoop++;
         
         if (_infiniteLoop || _currentLoop < _loopCount) {
-            // 播放完成后等待
             if (_waitTimeAfterFinish > 0) {
                 NSLog(@"[TouchPlayer] Waiting %f seconds before next loop...", _waitTimeAfterFinish);
                 __weak __typeof(self) weakSelf = self;
@@ -187,37 +189,205 @@
     
     NSLog(@"[TouchPlayer] Injecting event at (%f, %f), type: %ld", location.x, location.y, (long)event.type);
     
-    [self simulateTouchAtLocation:location withType:event.type];
+    [self injectTouchAtLocation:location withType:event.type];
 }
 
-- (void)simulateTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
+- (void)injectTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
     UIWindow *keyWindow = [self getKeyWindow];
     if (!keyWindow) {
         NSLog(@"[TouchPlayer] No key window found");
         return;
     }
     
-    NSLog(@"[TouchPlayer] Using window: %@, location: (%f, %f)", keyWindow, location.x, location.y);
+    CGSize screenSize = keyWindow.screen.bounds.size;
     
-    UITouchPhase phase;
-    switch (type) {
-        case TouchEventTypeBegan:
-            phase = UITouchPhaseBegan;
-            break;
-        case TouchEventTypeMoved:
-            phase = UITouchPhaseMoved;
-            break;
-        case TouchEventTypeEnded:
-            phase = UITouchPhaseEnded;
-            break;
-        case TouchEventTypeCancelled:
-            phase = UITouchPhaseCancelled;
-            break;
-        default:
-            phase = UITouchPhaseBegan;
+    // 尝试多种注入方式
+    BOOL success = NO;
+    
+    // 方法1: 使用 UIApplication 的私有方法
+    success = [self simulateTouchWithUIApplication:location type:type];
+    
+    if (!success) {
+        // 方法2: 使用系统事件注入
+        success = [self simulateTouchWithSystemEvent:location type:type];
     }
     
-    [self injectPrivateTouchAtLocation:location phase:phase window:keyWindow];
+    if (!success) {
+        // 方法3: 使用视图层级直接触发
+        success = [self simulateTouchWithHitTest:location type:type];
+    }
+    
+    if (!success) {
+        NSLog(@"[TouchPlayer] All injection methods failed for location (%f, %f)", location.x, location.y);
+    }
+}
+
+- (BOOL)simulateTouchWithUIApplication:(CGPoint)location type:(TouchEventType)type {
+    @try {
+        UIApplication *app = [UIApplication sharedApplication];
+        
+        // 尝试使用 _sendTouchesForEvent: 方法
+        SEL sendTouchesSel = NSSelectorFromString(@"_sendTouchesForEvent:");
+        if (![app respondsToSelector:sendTouchesSel]) {
+            NSLog(@"[TouchPlayer] _sendTouchesForEvent: not available");
+            return NO;
+        }
+        
+        // 创建触摸事件
+        UIEvent *event = [self createSystemEventWithLocation:location type:type];
+        if (!event) {
+            NSLog(@"[TouchPlayer] Failed to create system event");
+            return NO;
+        }
+        
+        NSMethodSignature *sig = [app methodSignatureForSelector:sendTouchesSel];
+        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
+        [invocation setSelector:sendTouchesSel];
+        [invocation setTarget:app];
+        [invocation setArgument:&event atIndex:2];
+        [invocation invoke];
+        
+        return YES;
+    }
+    @catch (NSException *e) {
+        NSLog(@"[TouchPlayer] simulateTouchWithUIApplication failed: %@", e);
+        return NO;
+    }
+}
+
+- (BOOL)simulateTouchWithSystemEvent:(CGPoint)location type:(TouchEventType)type {
+    @try {
+        UIApplication *app = [UIApplication sharedApplication];
+        
+        // 尝试使用 _postEvent: 方法
+        SEL postEventSel = NSSelectorFromString(@"_postEvent:");
+        if (![app respondsToSelector:postEventSel]) {
+            NSLog(@"[TouchPlayer] _postEvent: not available");
+            return NO;
+        }
+        
+        UIEvent *event = [self createSystemEventWithLocation:location type:type];
+        if (!event) {
+            NSLog(@"[TouchPlayer] Failed to create system event");
+            return NO;
+        }
+        
+        NSMethodSignature *sig = [app methodSignatureForSelector:postEventSel];
+        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
+        [invocation setSelector:postEventSel];
+        [invocation setTarget:app];
+        [invocation setArgument:&event atIndex:2];
+        [invocation invoke];
+        
+        return YES;
+    }
+    @catch (NSException *e) {
+        NSLog(@"[TouchPlayer] simulateTouchWithSystemEvent failed: %@", e);
+        return NO;
+    }
+}
+
+- (BOOL)simulateTouchWithHitTest:(CGPoint)location type:(TouchEventType)type {
+    @try {
+        UIWindow *window = [self getKeyWindow];
+        if (!window) {
+            NSLog(@"[TouchPlayer] No window for hit test");
+            return NO;
+        }
+        
+        // 使用 hitTest 找到目标视图
+        UIView *hitView = [window hitTest:location withEvent:nil];
+        if (!hitView) {
+            NSLog(@"[TouchPlayer] No view found at location");
+            return NO;
+        }
+        
+        NSLog(@"[TouchPlayer] Hit view: %@", hitView);
+        
+        // 尝试直接调用按钮方法
+        if ([hitView respondsToSelector:@selector(sendActionsForControlEvents:)]) {
+            [hitView sendActionsForControlEvents:UIControlEventTouchUpInside];
+            return YES;
+        }
+        
+        // 尝试发送点击事件
+        SEL tapSel = NSSelectorFromString(@"touchesEnded:withEvent:");
+        if ([hitView respondsToSelector:tapSel]) {
+            NSSet *touches = [NSSet set];
+            UIEvent *event = [[UIEvent alloc] init];
+            [hitView performSelector:tapSel withObject:touches withObject:event];
+            return YES;
+        }
+        
+        return NO;
+    }
+    @catch (NSException *e) {
+        NSLog(@"[TouchPlayer] simulateTouchWithHitTest failed: %@", e);
+        return NO;
+    }
+}
+
+- (UIEvent *)createSystemEventWithLocation:(CGPoint)location type:(TouchEventType)type {
+    // 获取 UITouch 类
+    Class UITouchClass = NSClassFromString(@"UITouch");
+    Class UIEventClass = NSClassFromString(@"UIEvent");
+    
+    if (!UITouchClass || !UIEventClass) {
+        NSLog(@"[TouchPlayer] UITouch or UIEvent class not found");
+        return nil;
+    }
+    
+    // 使用 NSInvocation 创建 UITouch
+    SEL touchInitSel = NSSelectorFromString(@"_initWithView:location:");
+    if (![UITouchClass instancesRespondToSelector:touchInitSel]) {
+        touchInitSel = NSSelectorFromString(@"init");
+    }
+    
+    UITouch *touch = [[UITouchClass alloc] performSelector:touchInitSel];
+    if (!touch) {
+        NSLog(@"[TouchPlayer] Failed to create UITouch");
+        return nil;
+    }
+    
+    // 设置触摸属性
+    SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
+    if ([touch respondsToSelector:setLocationSel]) {
+        [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
+    }
+    
+    SEL setPhaseSel = NSSelectorFromString(@"_setPhase:");
+    if ([touch respondsToSelector:setPhaseSel]) {
+        UITouchPhase phase = UITouchPhaseBegan;
+        if (type == TouchEventTypeMoved) phase = UITouchPhaseMoved;
+        else if (type == TouchEventTypeEnded) phase = UITouchPhaseEnded;
+        else if (type == TouchEventTypeCancelled) phase = UITouchPhaseCancelled;
+        [touch performSelector:setPhaseSel withObject:@(phase)];
+    }
+    
+    SEL setWindowSel = NSSelectorFromString(@"_setWindow:");
+    if ([touch respondsToSelector:setWindowSel]) {
+        [touch performSelector:setWindowSel withObject:[self getKeyWindow]];
+    }
+    
+    SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
+    if ([touch respondsToSelector:setTapCountSel]) {
+        [touch performSelector:setTapCountSel withObject:@1];
+    }
+    
+    // 创建 UIEvent
+    UIEvent *event = [[UIEventClass alloc] init];
+    
+    SEL setTouchesSel = NSSelectorFromString(@"_setTouches:");
+    if ([event respondsToSelector:setTouchesSel]) {
+        [event performSelector:setTouchesSel withObject:[NSSet setWithObject:touch]];
+    }
+    
+    SEL setTypeSel = NSSelectorFromString(@"_setType:");
+    if ([event respondsToSelector:setTypeSel]) {
+        [event performSelector:setTypeSel withObject:@(UIEventTypeTouches)];
+    }
+    
+    return event;
 }
 
 - (UIWindow *)getKeyWindow {
@@ -244,167 +414,6 @@
     }
     
     return keyWindow;
-}
-
-- (void)injectPrivateTouchAtLocation:(CGPoint)location phase:(UITouchPhase)phase window:(UIWindow *)window {
-    NSLog(@"[TouchPlayer] Injecting touch at (%f, %f), phase: %ld, window: %@", 
-          location.x, location.y, (long)phase, window);
-    
-    // 方法1：直接在进程内调用 window 的 sendEvent
-    [self tryDirectSendEvent:location phase:phase window:window];
-}
-
-- (void)tryDirectSendEvent:(CGPoint)location phase:(UITouchPhase)phase window:(UIWindow *)window {
-    NSLog(@"[TouchPlayer] Method 1: Direct sendEvent");
-    
-    // 创建 UITouch
-    UITouch *touch = [[UITouch alloc] init];
-    
-    // 使用私有API设置触摸属性
-    SEL setPhaseSel = NSSelectorFromString(@"setPhase:");
-    if ([touch respondsToSelector:setPhaseSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setPhaseSel withObject:@(phase)];
-#pragma clang diagnostic pop
-    }
-    
-    SEL setWindowSel = NSSelectorFromString(@"setWindow:");
-    if ([touch respondsToSelector:setWindowSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setWindowSel withObject:window];
-#pragma clang diagnostic pop
-    }
-    
-    SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
-    if ([touch respondsToSelector:setTapCountSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setTapCountSel withObject:@1];
-#pragma clang diagnostic pop
-    }
-    
-    // 设置触摸位置
-    SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
-    if ([touch respondsToSelector:setLocationSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
-#pragma clang diagnostic pop
-    }
-    
-    // 创建 UIEvent
-    UIEvent *event = [[UIEvent alloc] init];
-    SEL setWindowEventSel = NSSelectorFromString(@"setWindow:");
-    if ([event respondsToSelector:setWindowEventSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [event performSelector:setWindowEventSel withObject:window];
-#pragma clang diagnostic pop
-    }
-    
-    // 获取window的sendEvent方法并直接调用
-    SEL sendEventSel = @selector(sendEvent:);
-    if ([window respondsToSelector:sendEventSel]) {
-        NSMethodSignature *sig = [window methodSignatureForSelector:sendEventSel];
-        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
-        [invocation setSelector:sendEventSel];
-        [invocation setTarget:window];
-        [invocation setArgument:&event atIndex:2];
-        [invocation invoke];
-        
-        NSLog(@"[TouchPlayer] Direct sendEvent succeeded");
-        return;
-    }
-    
-    // 备用方法：尝试调用内部方法
-    [self tryInternalTouchInjection:location phase:phase window:window];
-}
-
-- (void)tryInternalTouchInjection:(CGPoint)location phase:(UITouchPhase)phase window:(UIWindow *)window {
-    NSLog(@"[TouchPlayer] Method 2: Internal touch injection");
-    
-    // 查找点击位置下的视图
-    UIView *hitView = [window hitTest:location withEvent:nil];
-    if (!hitView) {
-        NSLog(@"[TouchPlayer] No view found at location");
-        return;
-    }
-    
-    NSLog(@"[TouchPlayer] Hit view: %@", hitView);
-    
-    // 创建触摸对象
-    UITouch *touch = [[UITouch alloc] init];
-    
-    // 使用私有API设置触摸属性
-    SEL setPhaseSel = NSSelectorFromString(@"setPhase:");
-    if ([touch respondsToSelector:setPhaseSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setPhaseSel withObject:@(phase)];
-#pragma clang diagnostic pop
-    }
-    
-    SEL setWindowSel = NSSelectorFromString(@"setWindow:");
-    if ([touch respondsToSelector:setWindowSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setWindowSel withObject:window];
-#pragma clang diagnostic pop
-    }
-    
-    SEL setTapCountSel = NSSelectorFromString(@"setTapCount:");
-    if ([touch respondsToSelector:setTapCountSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setTapCountSel withObject:@1];
-#pragma clang diagnostic pop
-    }
-    
-    // 设置触摸位置
-    SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
-    if ([touch respondsToSelector:setLocationSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [touch performSelector:setLocationSel withObject:[NSValue valueWithCGPoint:location]];
-#pragma clang diagnostic pop
-    }
-    
-    // 创建事件
-    UIEvent *event = [[UIEvent alloc] init];
-    SEL setWindowEventSel = NSSelectorFromString(@"setWindow:");
-    if ([event respondsToSelector:setWindowEventSel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [event performSelector:setWindowEventSel withObject:window];
-#pragma clang diagnostic pop
-    }
-    
-    // 使用 NSSet 而不是 NSArray
-    NSSet *touches = [NSSet setWithObject:touch];
-    
-    if (phase == UITouchPhaseBegan) {
-        if ([hitView respondsToSelector:@selector(touchesBegan:withEvent:)]) {
-            [hitView touchesBegan:touches withEvent:event];
-            NSLog(@"[TouchPlayer] Called touchesBegan:");
-        }
-    } else if (phase == UITouchPhaseMoved) {
-        if ([hitView respondsToSelector:@selector(touchesMoved:withEvent:)]) {
-            [hitView touchesMoved:touches withEvent:event];
-            NSLog(@"[TouchPlayer] Called touchesMoved:");
-        }
-    } else if (phase == UITouchPhaseEnded) {
-        if ([hitView respondsToSelector:@selector(touchesEnded:withEvent:)]) {
-            [hitView touchesEnded:touches withEvent:event];
-            NSLog(@"[TouchPlayer] Called touchesEnded:");
-        }
-    } else if (phase == UITouchPhaseCancelled) {
-        if ([hitView respondsToSelector:@selector(touchesCancelled:withEvent:)]) {
-            [hitView touchesCancelled:touches withEvent:event];
-            NSLog(@"[TouchPlayer] Called touchesCancelled:");
-        }
-    }
 }
 
 - (void)dealloc {

@@ -1,4 +1,6 @@
 #import "TouchRecorder.h"
+#import <MediaPlayer/MediaPlayer.h>
+#import <AVFoundation/AVFoundation.h>
 
 @interface TouchRecorder ()
 
@@ -6,6 +8,7 @@
 @property (nonatomic, strong) NSMutableArray<TouchEvent *> *recordedEvents;
 @property (nonatomic, assign) NSTimeInterval recordingStartTime;
 @property (nonatomic, strong) NSMutableDictionary *touchStartTimes;
+@property (nonatomic, strong) MPVolumeView *volumeView;
 
 @end
 
@@ -26,8 +29,46 @@
         _touchStartTimes = [NSMutableDictionary dictionary];
         _longPressThreshold = 0.5;
         _isRecording = NO;
+        
+        [self setupVolumeListener];
     }
     return self;
+}
+
+- (void)setupVolumeListener {
+    _volumeView = [[MPVolumeView alloc] init];
+    _volumeView.hidden = YES;
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(handleVolumeChanged:) 
+                                                 name:@"AVSystemController_SystemVolumeDidChangeNotification" 
+                                               object:nil];
+}
+
+- (void)handleVolumeChanged:(NSNotification *)notification {
+    if (!_isRecording) return;
+    
+    NSDictionary *userInfo = notification.userInfo;
+    if (!userInfo) return;
+    
+    NSNumber *reason = userInfo[@"AVSystemController_AudioVolumeChangeReasonNotificationParameter"];
+    if (!reason) return;
+    
+    NSInteger reasonValue = [reason integerValue];
+    
+    if (reasonValue == 1 || reasonValue == 0) {
+        NSNumber *volume = userInfo[@"AVSystemController_AudioVolumeNotificationParameter"];
+        if (volume) {
+            NSLog(@"[TouchRecorder] Volume changed to %f, reason: %ld", [volume floatValue], (long)reasonValue);
+            
+            static float lastVolume = -1;
+            if (lastVolume >= 0 && [volume floatValue] < lastVolume) {
+                NSLog(@"[TouchRecorder] Volume down pressed, stopping recording...");
+                [self stopRecording];
+            }
+            lastVolume = [volume floatValue];
+        }
+    }
 }
 
 - (void)startRecording {
@@ -65,6 +106,8 @@
 - (void)recordEvent:(TouchEvent *)event {
     if (!_isRecording) return;
     
+    NSLog(@"[TouchRecorder] Recording event: %@", event);
+    
     NSTimeInterval eventDelay = event.timestamp - _recordingStartTime;
     if (_recordedEvents.count > 0) {
         TouchEvent *lastEvent = _recordedEvents.lastObject;
@@ -89,6 +132,7 @@
     }
     
     [_recordedEvents addObject:event];
+    NSLog(@"[TouchRecorder] Total events: %lu", (unsigned long)_recordedEvents.count);
     
     if (_eventRecordedBlock) {
         _eventRecordedBlock(event);

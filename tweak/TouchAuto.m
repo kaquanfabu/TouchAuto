@@ -69,10 +69,14 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
         TouchRecorder *recorder = [TouchRecorder sharedInstance];
         TouchPlayer *player = [TouchPlayer sharedInstance];
         
-        if (recorder.recordedEvents.count > 0) {
-            [player setEvents:recorder.recordedEvents];
-            [player play];
+        NSArray *events = recorder.recordedEvents;
+        if (!events || events.count == 0) {
+            [self showAlertWithTitle:@"提示" message:@"没有可播放的事件，请先录制触摸"];
+            return;
         }
+        
+        [player setEvents:events];
+        [player play];
     };
     
     panel.pauseBlock = ^{

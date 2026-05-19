@@ -552,9 +552,7 @@
 
 - (void)playButtonTapped {
     [self resetAutoHideTimer];
-    if (_playBlock) {
-        _playBlock();
-    }
+    [self showPlaybackPanel];
 }
 
 - (void)pauseButtonTapped {
@@ -589,6 +587,241 @@
     [self resetAutoHideTimer];
     if (_showLogsBlock) {
         _showLogsBlock();
+    }
+}
+
+- (void)showPlaybackPanel {
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (!keyWindow) return;
+    
+    CGFloat panelWidth = 300;
+    CGFloat panelHeight = 220;
+    CGFloat padding = 20;
+    
+    UIView *backdropView = [[UIView alloc] initWithFrame:keyWindow.bounds];
+    backdropView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.5];
+    backdropView.tag = 9998;
+    [keyWindow addSubview:backdropView];
+    
+    UIView *panelView = [[UIView alloc] init];
+    panelView.backgroundColor = [UIColor colorWithRed:0.15 green:0.15 blue:0.15 alpha:0.95];
+    panelView.layer.cornerRadius = 16;
+    panelView.layer.shadowColor = [UIColor blackColor].CGColor;
+    panelView.layer.shadowOpacity = 0.5;
+    panelView.layer.shadowRadius = 10;
+    panelView.tag = 9999;
+    
+    UILabel *titleLabel = [[UILabel alloc] init];
+    titleLabel.text = @"播放控制台";
+    titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightBold];
+    titleLabel.textColor = [UIColor whiteColor];
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    
+    UILabel *loopCountLabel = [[UILabel alloc] init];
+    loopCountLabel.text = @"播放次数:";
+    loopCountLabel.font = [UIFont systemFontOfSize:14];
+    loopCountLabel.textColor = [UIColor lightGrayColor];
+    
+    UITextField *loopCountField = [[UITextField alloc] init];
+    loopCountField.placeholder = @"输入次数";
+    loopCountField.keyboardType = UIKeyboardTypeNumberPad;
+    loopCountField.backgroundColor = [UIColor whiteColor];
+    loopCountField.textColor = [UIColor blackColor];
+    loopCountField.font = [UIFont systemFontOfSize:14];
+    loopCountField.textAlignment = NSTextAlignmentCenter;
+    loopCountField.layer.cornerRadius = 8;
+    loopCountField.text = @"1";
+    loopCountField.tag = 1001;
+    
+    UISwitch *infiniteSwitch = [[UISwitch alloc] init];
+    infiniteSwitch.on = NO;
+    infiniteSwitch.tag = 1002;
+    [infiniteSwitch addTarget:self action:@selector(infiniteSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    
+    UILabel *infiniteLabel = [[UILabel alloc] init];
+    infiniteLabel.text = @"无限播放";
+    infiniteLabel.font = [UIFont systemFontOfSize:14];
+    infiniteLabel.textColor = [UIColor lightGrayColor];
+    
+    UIButton *playButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [playButton setTitle:@"开始播放" forState:UIControlStateNormal];
+    [playButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    playButton.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:1.0];
+    playButton.layer.cornerRadius = 8;
+    playButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+    [playButton addTarget:self action:@selector(startPlaybackFromPanel:) forControlEvents:UIControlEventTouchUpInside];
+    
+    UIButton *cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [cancelButton setTitle:@"取消" forState:UIControlStateNormal];
+    [cancelButton setTitleColor:[UIColor lightGrayColor] forState:UIControlStateNormal];
+    cancelButton.backgroundColor = [UIColor colorWithWhite:0.3 alpha:1.0];
+    cancelButton.layer.cornerRadius = 8;
+    cancelButton.titleLabel.font = [UIFont systemFontOfSize:16];
+    [cancelButton addTarget:self action:@selector(dismissPlaybackPanel) forControlEvents:UIControlEventTouchUpInside];
+    
+    [panelView addSubview:titleLabel];
+    [panelView addSubview:loopCountLabel];
+    [panelView addSubview:loopCountField];
+    [panelView addSubview:infiniteSwitch];
+    [panelView addSubview:infiniteLabel];
+    [panelView addSubview:playButton];
+    [panelView addSubview:cancelButton];
+    
+    panelView.translatesAutoresizingMaskIntoConstraints = NO;
+    titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    loopCountLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    loopCountField.translatesAutoresizingMaskIntoConstraints = NO;
+    infiniteSwitch.translatesAutoresizingMaskIntoConstraints = NO;
+    infiniteLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    playButton.translatesAutoresizingMaskIntoConstraints = NO;
+    cancelButton.translatesAutoresizingMaskIntoConstraints = NO;
+    
+    [keyWindow addSubview:panelView];
+    
+    [NSLayoutConstraint activateConstraints:@[
+        [panelView.centerXAnchor constraintEqualToAnchor:keyWindow.centerXAnchor],
+        [panelView.centerYAnchor constraintEqualToAnchor:keyWindow.centerYAnchor],
+        [panelView.widthAnchor constraintEqualToConstant:panelWidth],
+        [panelView.heightAnchor constraintEqualToConstant:panelHeight],
+        
+        [titleLabel.topAnchor constraintEqualToAnchor:panelView.topAnchor constant:padding],
+        [titleLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:padding],
+        [titleLabel.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-padding],
+        
+        [loopCountLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:20],
+        [loopCountLabel.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:padding],
+        
+        [loopCountField.topAnchor constraintEqualToAnchor:loopCountLabel.topAnchor],
+        [loopCountField.leadingAnchor constraintEqualToAnchor:loopCountLabel.trailingAnchor constant:15],
+        [loopCountField.widthAnchor constraintEqualToConstant:80],
+        [loopCountField.heightAnchor constraintEqualToConstant:35],
+        
+        [infiniteSwitch.topAnchor constraintEqualToAnchor:loopCountLabel.bottomAnchor constant:20],
+        [infiniteSwitch.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-padding],
+        
+        [infiniteLabel.topAnchor constraintEqualToAnchor:infiniteSwitch.topAnchor],
+        [infiniteLabel.centerYAnchor constraintEqualToAnchor:infiniteSwitch.centerYAnchor],
+        [infiniteLabel.trailingAnchor constraintEqualToAnchor:infiniteSwitch.leadingAnchor constant:-10],
+        
+        [playButton.topAnchor constraintEqualToAnchor:infiniteSwitch.bottomAnchor constant:20],
+        [playButton.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor constant:padding],
+        [playButton.trailingAnchor constraintEqualToAnchor:cancelButton.leadingAnchor constant:-10],
+        [playButton.heightAnchor constraintEqualToConstant:40],
+        
+        [cancelButton.topAnchor constraintEqualToAnchor:playButton.topAnchor],
+        [cancelButton.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-padding],
+        [cancelButton.widthAnchor constraintEqualToConstant:80],
+        [cancelButton.heightAnchor constraintEqualToConstant:40],
+    ]];
+    
+    UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissPlaybackPanel)];
+    [backdropView addGestureRecognizer:tapGesture];
+}
+
+- (void)infiniteSwitchChanged:(UISwitch *)sender {
+    UIView *panelView = [self findViewWithTag:9999];
+    if (!panelView) return;
+    
+    UITextField *loopCountField = (UITextField *)[panelView viewWithTag:1001];
+    if (loopCountField) {
+        loopCountField.enabled = !sender.on;
+        loopCountField.alpha = sender.on ? 0.5 : 1.0;
+    }
+}
+
+- (void)startPlaybackFromPanel:(UIButton *)sender {
+    UIView *panelView = [self findViewWithTag:9999];
+    if (!panelView) return;
+    
+    UISwitch *infiniteSwitch = (UISwitch *)[panelView viewWithTag:1002];
+    UITextField *loopCountField = (UITextField *)[panelView viewWithTag:1001];
+    
+    TouchPlayer *player = [TouchPlayer sharedInstance];
+    TouchRecorder *recorder = [TouchRecorder sharedInstance];
+    
+    NSArray *events = recorder.recordedEvents;
+    if (!events || events.count == 0) {
+        [self dismissPlaybackPanel];
+        [self showAlertWithTitle:@"提示" message:@"没有可播放的事件，请先录制触摸"];
+        return;
+    }
+    
+    [player setEvents:events];
+    
+    if (infiniteSwitch.on) {
+        [player setInfiniteLoop:YES];
+    } else {
+        [player setInfiniteLoop:NO];
+        NSUInteger loopCount = 1;
+        if (loopCountField.text.length > 0) {
+            loopCount = [loopCountField.text integerValue];
+        }
+        [player setLoopCount:loopCount];
+    }
+    
+    [self dismissPlaybackPanel];
+    
+    if (_playBlock) {
+        _playBlock();
+    }
+}
+
+- (void)dismissPlaybackPanel {
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (!keyWindow) return;
+    
+    UIView *backdropView = [keyWindow viewWithTag:9998];
+    UIView *panelView = [keyWindow viewWithTag:9999];
+    
+    [backdropView removeFromSuperview];
+    [panelView removeFromSuperview];
+}
+
+- (UIView *)findViewWithTag:(NSInteger)tag {
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (!keyWindow) return nil;
+    
+    for (UIView *subview in keyWindow.subviews) {
+        if (subview.tag == tag) {
+            return subview;
+        }
+    }
+    return nil;
+}
+
+- (UIWindow *)getKeyWindow {
+    UIWindow *keyWindow = nil;
+    
+    if (@available(iOS 13.0, *)) {
+        NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene *scene in scenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) {
+                        keyWindow = window;
+                        break;
+                    }
+                }
+                if (keyWindow) break;
+            }
+        }
+    }
+    
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].keyWindow;
+    }
+    
+    return keyWindow;
+}
+
+- (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+    
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (keyWindow.rootViewController) {
+        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
     }
 }
 

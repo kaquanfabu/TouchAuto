@@ -15,6 +15,8 @@
         _touchIdentifier = @(touch.hash);
         _pressure = touch.force;
         
+        NSLog(@"[TouchEvent] Recording at (%f, %f) in window: %@", _location.x, _location.y, touch.window);
+        
         switch (touch.phase) {
             case UITouchPhaseBegan:
                 _type = TouchEventTypeBegan;
@@ -34,6 +36,7 @@
         
         if (touch.window) {
             _bounds = touch.window.bounds;
+            NSLog(@"[TouchEvent] Window bounds: %@", NSStringFromCGRect(_bounds));
         }
     }
     return self;

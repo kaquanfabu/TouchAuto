@@ -58,8 +58,16 @@
 }
 
 - (void)play {
-    if (_isPlaying || !_events || _events.count == 0) return;
+    if (_isPlaying) {
+        NSLog(@"[TouchPlayer] Already playing");
+        return;
+    }
+    if (!_events || _events.count == 0) {
+        NSLog(@"[TouchPlayer] No events to play");
+        return;
+    }
     
+    NSLog(@"[TouchPlayer] Starting playback with %lu events", (unsigned long)_events.count);
     _isPlaying = YES;
     _isPaused = NO;
     _startTime = [[NSDate date] timeIntervalSince1970];
@@ -162,14 +170,21 @@
         location.y += offsetY;
     }
     
+    NSLog(@"[TouchPlayer] Injecting event at (%f, %f), type: %ld", location.x, location.y, (long)event.type);
+    
     dispatch_async(dispatch_get_main_queue(), ^{
         [self simulateTouchAtLocation:location withType:event.type];
     });
 }
 
 - (void)simulateTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    if (!keyWindow) return;
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (!keyWindow) {
+        NSLog(@"[TouchPlayer] No key window found");
+        return;
+    }
+    
+    NSLog(@"[TouchPlayer] Using window: %@, location: (%f, %f)", keyWindow, location.x, location.y);
     
     UITouchPhase phase;
     switch (type) {
@@ -192,11 +207,42 @@
     [self injectPrivateTouchAtLocation:location phase:phase window:keyWindow];
 }
 
+- (UIWindow *)getKeyWindow {
+    UIWindow *keyWindow = nil;
+    
+    if (@available(iOS 13.0, *)) {
+        NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene *scene in scenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) {
+                        keyWindow = window;
+                        break;
+                    }
+                }
+                if (keyWindow) break;
+            }
+        }
+    }
+    
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].keyWindow;
+    }
+    
+    return keyWindow;
+}
+
 - (void)injectPrivateTouchAtLocation:(CGPoint)location phase:(UITouchPhase)phase window:(UIWindow *)window {
     Class UITouchClass = objc_getClass("UITouch");
     Class UIEventClass = objc_getClass("UIEvent");
     
-    if (!UITouchClass || !UIEventClass) return;
+    NSLog(@"[TouchPlayer] UITouchClass: %@, UIEventClass: %@", UITouchClass, UIEventClass);
+    
+    if (!UITouchClass || !UIEventClass) {
+        NSLog(@"[TouchPlayer] Failed to get UITouch or UIEvent class");
+        return;
+    }
     
     UITouch *touch = [UITouchClass alloc];
     if (!touch) return;

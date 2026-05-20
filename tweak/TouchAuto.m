@@ -10,19 +10,12 @@ static BOOL gIsAppReady = NO;
 static Class gUIWindowClass = nil;
 static IMP gOriginalSendEvent = NULL;
 
-// 缓存真实的 UITouch 和 UIEvent 对象用于回放
-static NSMutableArray *gCachedTouches = nil;
-static NSMutableArray *gCachedEvents = nil;
-
 static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
 
 @interface TouchAuto : NSObject
 
 + (void)load;
 + (void)setup;
-+ (NSArray *)cachedTouches;
-+ (NSArray *)cachedEvents;
-+ (void)clearCachedObjects;
 
 @end
 
@@ -32,8 +25,6 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         [self swizzleMethods];
-        gCachedTouches = [NSMutableArray array];
-        gCachedEvents = [NSMutableArray array];
     });
 }
 
@@ -429,7 +420,7 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
         UIBarButtonItem *closeButton = [[UIBarButtonItem alloc] initWithTitle:@"关闭" 
                                                                        style:UIBarButtonItemStyleDone 
                                                                       target:self 
-                                                                      action:@selector(dismissLogs)];
+                                                                     action:@selector(dismissLogs)];
         
         navController.topViewController.navigationItem.rightBarButtonItems = @[closeButton, copyButton];
         navController.topViewController.title = @"运行日志";
@@ -460,17 +451,48 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
     }
 }
 
-+ (void)copyLogs {
-    TouchPlayer *player = [TouchPlayer sharedInstance];
-    NSString *logs = [player getLogs];
++ (UIWindow *)getKeyWindow {
+    UIWindow *keyWindow = nil;
     
-    if (logs && logs.length > 0) {
-        UIPasteboard *pasteboard = [UIPasteboard generalPasteboard];
-        pasteboard.string = logs;
-        [self showAlertWithTitle:@"复制成功" message:@"日志已复制到剪贴板"];
-    } else {
-        [self showAlertWithTitle:@"提示" message:@"暂无日志可复制"];
+    if (@available(iOS 13.0, *)) {
+        NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene *scene in scenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) {
+                        keyWindow = window;
+                        break;
+                    }
+                }
+                if (keyWindow) break;
+            }
+        }
     }
+    
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].keyWindow;
+    }
+    
+    return keyWindow;
+}
+
++ (void)copyLogs {
+    TouchRecorder *recorder = [TouchRecorder sharedInstance];
+    TouchPlayer *player = [TouchPlayer sharedInstance];
+    
+    NSMutableString *logText = [NSMutableString string];
+    [logText appendString:@"═══════════════════════════════\n"];
+    [logText appendString:@"         TouchAuto 运行日志\n"];
+    [logText appendString:@"═══════════════════════════════\n\n"];
+    [logText appendFormat:@"录制状态: %@\n", recorder.isRecording ? @"录制中" : @"未录制"];
+    [logText appendFormat:@"录制事件数: %lu 个\n", (unsigned long)recorder.recordedEvents.count];
+    [logText appendFormat:@"播放状态: %@\n", player.isPlaying ? @"播放中" : @"已停止"];
+    [logText appendFormat:@"暂停状态: %@\n", player.isPaused ? @"已暂停" : @"未暂停"];
+    [logText appendFormat:@"循环次数: %lu/%lu\n", (unsigned long)player.currentLoop, (unsigned long)player.loopCount];
+    
+    UIPasteboard *pasteboard = [UIPasteboard generalPasteboard];
+    pasteboard.string = logText;
 }
 
 + (void)dismissLogs {
@@ -480,111 +502,105 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
     }
 }
 
-+ (NSString *)typeStringForTouchType:(TouchEventType)type {
+#pragma mark - UIDocumentPickerDelegate
+
++ (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    if (urls.count == 0) return;
+    
+    NSURL *url = urls.firstObject;
+    NSString *fileName = [url lastPathComponent];
+    
+    if ([fileName hasSuffix:@".json"] || [fileName hasSuffix:@".txt"]) {
+        [self loadScriptFromURL:url];
+    } else {
+        [self showAlertWithTitle:@"提示" message:@"请选择 JSON 或 TXT 格式的脚本文件"];
+    }
+}
+
++ (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentAtURL:(NSURL *)url {
+    [self documentPicker:controller didPickDocumentsAtURLs:@[url]];
+}
+
++ (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
+    // 用户取消了选择
+}
+
++ (void)loadScriptFromURL:(NSURL *)url {
+    NSError *error = nil;
+    NSData *data = [NSData dataWithContentsOfURL:url options:0 error:&error];
+    
+    if (error || !data) {
+        [self showAlertWithTitle:@"加载失败" message:@"无法读取文件"];
+        return;
+    }
+    
+    NSDictionary *scriptData = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    
+    if (error || !scriptData) {
+        [self showAlertWithTitle:@"加载失败" message:@"文件格式错误，不是有效的JSON脚本"];
+        return;
+    }
+    
+    NSArray *events = scriptData[@"events"];
+    if (!events || ![events isKindOfClass:[NSArray class]]) {
+        [self showAlertWithTitle:@"加载失败" message:@"脚本文件中没有找到事件数据"];
+        return;
+    }
+    
+    TouchRecorder *recorder = [TouchRecorder sharedInstance];
+    [recorder clearRecording];
+    
+    for (NSDictionary *eventDict in events) {
+        TouchEvent *event = [TouchEvent fromDictionary:eventDict];
+        if (event) {
+            [recorder addEvent:event];
+        }
+    }
+    
+    NSString *fileName = [url lastPathComponent];
+    [self showAlertWithTitle:@"导入成功" message:[NSString stringWithFormat:@"已从文件「%@」导入 %lu 个事件", fileName, (unsigned long)recorder.recordedEvents.count]];
+}
+
++ (NSString *)typeStringForTouchType:(NSInteger)type {
     switch (type) {
-        case TouchEventTypeBegan: return @"抬起";
-        case TouchEventTypeMoved: return @"移动";
-        case TouchEventTypeEnded: return @"抬起";
-        case TouchEventTypeCancelled: return @"取消";
+        case 0: return @"按下";
+        case 1: return @"移动";
+        case 2: return @"抬起";
+        case 3: return @"取消";
         default: return @"未知";
     }
 }
 
 + (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-        
-        UIWindow *keyWindow = [self getKeyWindow];
-        if (keyWindow && keyWindow.rootViewController) {
-            [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-        }
-    });
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (keyWindow) {
+        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+    }
 }
 
 + (void)handleApplicationDidBecomeActive:(NSNotification *)notification {
-    [self setup];
-}
-
-+ (UIWindow *)getKeyWindow {
-    UIWindow *keyWindow = nil;
-    
-    if (@available(iOS 13.0, *)) {
-        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                keyWindow = scene.windows.firstObject;
-                break;
-            }
-        }
-    }
-    
-    if (!keyWindow) {
-        keyWindow = [UIApplication sharedApplication].keyWindow;
-    }
-    
-    if (!keyWindow) {
-        keyWindow = [UIApplication sharedApplication].windows.firstObject;
-    }
-    
-    return keyWindow;
-}
-
-+ (NSArray *)cachedTouches {
-    return gCachedTouches;
-}
-
-+ (NSArray *)cachedEvents {
-    return gCachedEvents;
-}
-
-+ (void)clearCachedObjects {
-    [gCachedTouches removeAllObjects];
-    [gCachedEvents removeAllObjects];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [TouchAuto setup];
+    });
 }
 
 @end
 
 static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event) {
-    // 缓存真实的 UITouch 和 UIEvent 对象
-    if (event.type == UIEventTypeTouches) {
-        NSSet *touches = [event allTouches];
-        if (touches && touches.count > 0) {
-            [gCachedTouches addObjectsFromArray:[touches allObjects]];
-            [gCachedEvents addObject:event];
-            
-            // 限制缓存数量
-            if (gCachedTouches.count > 100) {
-                [gCachedTouches removeObjectsInRange:NSMakeRange(0, gCachedTouches.count - 50)];
-            }
-            if (gCachedEvents.count > 50) {
-                [gCachedEvents removeObjectsInRange:NSMakeRange(0, gCachedEvents.count - 25)];
-            }
-        }
-    }
-    
-    // 调用原始方法
     if (gOriginalSendEvent) {
         ((void (*)(id, SEL, UIEvent *))gOriginalSendEvent)(self, _cmd, event);
     }
-}
-
-#pragma mark - UIDocumentPickerDelegate
-
-@implementation TouchAuto (UIDocumentPickerDelegate)
-
-- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    if (urls.count > 0) {
-        NSString *filePath = [urls.firstObject path];
-        if ([[filePath pathExtension] isEqualToString:@"json"]) {
-            [TouchAuto loadScriptFromFile:filePath];
-        } else {
-            [TouchAuto showAlertWithTitle:@"提示" message:@"请选择 JSON 文件"];
-        }
+    
+    if (!gIsAppReady) return;
+    
+    TouchRecorder *recorder = [TouchRecorder sharedInstance];
+    if (!recorder.isRecording) return;
+    
+    NSSet *touches = [event allTouches];
+    for (UITouch *touch in touches) {
+        TouchEvent *touchEvent = [[TouchEvent alloc] initWithTouch:touch event:event];
+        [recorder recordEvent:touchEvent];
     }
 }
-
-- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
-    // Do nothing
-}
-
-@end

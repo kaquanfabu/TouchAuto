@@ -172,23 +172,23 @@
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
     UIWindow *window = notification.object;
-    if (!window) return;
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        // 只有在面板可见且当前窗口不是主窗口时才重新添加
-        if (_isVisible && !self.hidden) {
-            UIWindow *currentKeyWindow = [self getKeyWindow];
-            if (currentKeyWindow && currentKeyWindow != self.superview) {
+    if (window && self.superview != window) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (_isVisible && !self.hidden) {
                 [self removeFromSuperview];
-                [currentKeyWindow addSubview:self];
-                self.frame = currentKeyWindow.bounds;
+                [window addSubview:self];
+                self.frame = window.bounds;
             }
-        }
-    });
+        });
+    }
 }
 
 - (void)windowDidResignKey:(NSNotification *)notification {
-    // 窗口失去焦点时不做处理，避免在应用启动过程中频繁切换
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (_isVisible && self.hidden) {
+            [self show];
+        }
+    });
 }
 
 - (void)dealloc {
@@ -416,25 +416,8 @@
     if (!_isVisible) return;
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = [self getKeyWindow];
-        if (!keyWindow) {
-            NSLog(@"[FloatingPanel] checkVisibility: 无法获取keyWindow");
-            return;
-        }
-        
-        // 如果面板被隐藏或者没有父视图，尝试重新显示
         if (self.hidden || !self.superview) {
-            NSLog(@"[FloatingPanel] checkVisibility: 面板不可见，尝试重新显示");
             [self show];
-            return;
-        }
-        
-        // 检查父视图是否是当前keyWindow
-        if (self.superview != keyWindow) {
-            NSLog(@"[FloatingPanel] checkVisibility: 父视图不是keyWindow，重新添加");
-            [self removeFromSuperview];
-            [keyWindow addSubview:self];
-            self.frame = keyWindow.bounds;
         }
     });
 }

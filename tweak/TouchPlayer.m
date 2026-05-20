@@ -4,8 +4,14 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <mach/mach_time.h>
-#import <IOKit/hid/IOHIDEvent.h>
 
+static inline AbsoluteTime TAAbsoluteTimeNow(void) {
+    uint64_t t = mach_absolute_time();
+    AbsoluteTime at;
+    at.hi = (uint32_t)(t >> 32);
+    at.lo = (uint32_t)(t & 0xffffffff);
+    return at;
+}
 @interface UIEvent (Private)
 - (void)_setHIDEvent:(IOHIDEventRef)event;
 @end
@@ -347,14 +353,22 @@
     BOOL isDown = (type != TouchEventTypeEnded);
 
     IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(
-        kCFAllocatorDefault,
-        mach_absolute_time(),
-        kIOHIDDigitizerTransducerTypeHand,
-        0,0,0,0,0,0,0,0,
-        isDown,
-        isDown,
-        NULL
-    );
+    kCFAllocatorDefault,
+    TAAbsoluteTimeNow(),
+    kIOHIDDigitizerTransducerTypeHand,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    isDown,
+    isDown,
+    NULL,
+    0
+);
 
     IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(
         kCFAllocatorDefault,

@@ -4,8 +4,6 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <mach/mach_time.h>
-#import <mach/mach_time.h>
-#import <objc/message.h>
 
 typedef struct __IOHIDEvent *IOHIDEventRef;
 typedef uint32_t IOHIDDigitizerTransducerType;
@@ -47,16 +45,15 @@ extern IOHIDEventRef IOHIDEventCreateDigitizerFingerEvent(
 
 extern void IOHIDEventAppendEvent(IOHIDEventRef parent, IOHIDEventRef child, CFOptionFlags flags);
 
-@interface UIEvent (Private)
+@interface UIEvent (TouchAutoPrivate)
 - (void)_setHIDEvent:(IOHIDEventRef)event;
 @end
-
 
 static inline AbsoluteTime TAAbsoluteTimeNow(void) {
     uint64_t t = mach_absolute_time();
     AbsoluteTime at;
     at.hi = (uint32_t)(t >> 32);
-    at.lo = (uint32_t)(t & 0xffffffff);
+    at.lo = (uint32_t)t;
     return at;
 }
 @interface UIEvent (Private)
@@ -399,21 +396,19 @@ static inline AbsoluteTime TAAbsoluteTimeNow(void) {
 
     BOOL isDown = (type != TouchEventTypeEnded);
 
-    IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(
+    IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(
     kCFAllocatorDefault,
     TAAbsoluteTimeNow(),
-    kIOHIDDigitizerTransducerTypeHand,
+    1,
+    2,
     0,
+    p.x,
+    p.y,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
+    0.4,
+    0.4,
     isDown,
     isDown,
-    NULL,
     0
 );
 

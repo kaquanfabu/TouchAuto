@@ -395,7 +395,23 @@ static inline AbsoluteTime TAAbsoluteTimeNow(void) {
     CGPoint p = [window convertPoint:location fromWindow:nil];
 
     BOOL isDown = (type != TouchEventTypeEnded);
-
+    IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(
+        kCFAllocatorDefault,
+        TAAbsoluteTimeNow(),
+        kIOHIDDigitizerTransducerTypeHand,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        isDown,
+        isDown,
+        0,
+        0
+    );
     IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(
     kCFAllocatorDefault,
     TAAbsoluteTimeNow(),
@@ -412,21 +428,6 @@ static inline AbsoluteTime TAAbsoluteTimeNow(void) {
     0
 );
 
-    IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(
-        kCFAllocatorDefault,
-        mach_absolute_time(),
-        1,
-        2,
-        0,
-        p.x,
-        p.y,
-        0,
-        0.4,
-        0.4,
-        isDown,
-        isDown,
-        0
-    );
 
     IOHIDEventAppendEvent(parent, child,0);
 

@@ -80,7 +80,6 @@
     
     // 播放时禁用 FloatingPanel 交互，防止拦截触摸事件
     [self setPanelUserInteractionEnabled:NO];
-}
     
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss"];

@@ -478,6 +478,10 @@
 }
 
 - (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type {
+    [self triggerActionForView:view atLocation:location type:type recursionDepth:0];
+}
+
+- (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type recursionDepth:(NSUInteger)depth {
     if (!view) return;
     
     NSLog(@"[TouchPlayer] triggerActionForView: %@ at (%.2f, %.2f)", 
@@ -489,7 +493,7 @@
         ![interactiveSubview isKindOfClass:[UICollectionView class]]) {
         NSLog(@"[TouchPlayer] Found interactive subview: %@", NSStringFromClass(interactiveSubview.class));
         // 递归调用处理子视图
-        [self triggerActionForView:interactiveSubview atLocation:location type:type];
+        [self triggerActionForView:interactiveSubview atLocation:location type:type recursionDepth:depth];
         return;
     }
     
@@ -546,13 +550,10 @@
     }
     
     // 8. 尝试查找父级视图中的可交互控件（最多递归3层）
-    static NSUInteger recursionDepth = 0;
-    if (view.superview && recursionDepth < 3) {
-        recursionDepth++;
+    if (view.superview && depth < 3) {
         NSLog(@"[TouchPlayer] Moving to superview: %@ (depth: %lu)", 
-              NSStringFromClass(view.superview.class), (unsigned long)recursionDepth);
-        [self triggerActionForView:view.superview atLocation:location type:type];
-        recursionDepth--;
+              NSStringFromClass(view.superview.class), (unsigned long)(depth + 1));
+        [self triggerActionForView:view.superview atLocation:location type:type recursionDepth:(depth + 1)];
     }
 }
 

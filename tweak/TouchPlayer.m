@@ -496,9 +496,7 @@
 - (void)simulateGestureRecognizer:(UIGestureRecognizer *)gesture onView:(UIView *)view atLocation:(CGPoint)location {
     // 使用私有 API 触发 gesture recognizer
     // 方法1: 直接设置状态
-    if ([gesture respondsToSelector:NSSelectorFromString(@"_setRecognized:")]) {
-        [gesture performSelector:NSSelectorFromString(@"_setRecognized:") withObject:@(YES)];
-    }
+    [self invokeSelector:@selector(_setRecognized:) onObject:gesture withObject:@(YES)];
     
     // 方法2: 模拟 touchesBegan/touchesEnded
     UITouch *touch = [self createSimulatedTouchAtLocation:location inView:view];
@@ -513,6 +511,21 @@
     NSLog(@"[TouchPlayer] Simulated gesture: %@", NSStringFromClass(gesture.class));
 }
 
+- (void)invokeSelector:(SEL)selector onObject:(id)object withObject:(id)argument {
+    if (!object || ![object respondsToSelector:selector]) return;
+    
+    NSMethodSignature *signature = [object methodSignatureForSelector:selector];
+    if (!signature) return;
+    
+    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+    [invocation setSelector:selector];
+    [invocation setTarget:object];
+    if (argument) {
+        [invocation setArgument:&argument atIndex:2];
+    }
+    [invocation invoke];
+}
+
 - (UITouch *)createSimulatedTouchAtLocation:(CGPoint)location inView:(UIView *)view {
     Class UITouchClass = NSClassFromString(@"UITouch");
     if (!UITouchClass) return nil;
@@ -521,19 +534,13 @@
     
     // 使用 runtime 设置属性
     SEL setLocationInWindowSel = NSSelectorFromString(@"_setLocationInWindow:");
-    if ([touch respondsToSelector:setLocationInWindowSel]) {
-        [touch performSelector:setLocationInWindowSel withObject:[NSValue valueWithCGPoint:location]];
-    }
+    [self invokeSelector:setLocationInWindowSel onObject:touch withObject:[NSValue valueWithCGPoint:location]];
     
     SEL setViewSel = NSSelectorFromString(@"_setView:");
-    if ([touch respondsToSelector:setViewSel]) {
-        [touch performSelector:setViewSel withObject:view];
-    }
+    [self invokeSelector:setViewSel onObject:touch withObject:view];
     
     SEL setPhaseSel = NSSelectorFromString(@"_setPhase:");
-    if ([touch respondsToSelector:setPhaseSel]) {
-        [touch performSelector:setPhaseSel withObject:@(UITouchPhaseBegan)];
-    }
+    [self invokeSelector:setPhaseSel onObject:touch withObject:@(UITouchPhaseBegan)];
     
     return touch;
 }
@@ -545,9 +552,7 @@
     UIEvent *event = [[UIEventClass alloc] init];
     
     SEL setTouchesSel = NSSelectorFromString(@"_setTouches:");
-    if ([event respondsToSelector:setTouchesSel]) {
-        [event performSelector:setTouchesSel withObject:touches];
-    }
+    [self invokeSelector:setTouchesSel onObject:event withObject:touches];
     
     return event;
 }

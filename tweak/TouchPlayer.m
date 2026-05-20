@@ -205,7 +205,7 @@
 }
 
 - (void)enablePanelInteraction {
-    [[FloatingPanel sharedInstance] setUserInteractionEnabled:YES];
+    [FloatingPanel sharedInstance].userInteractionEnabled = YES;
 }
 
 - (void)executeNextEvent {

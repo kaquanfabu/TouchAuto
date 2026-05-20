@@ -11,6 +11,7 @@
 @property (nonatomic, strong) dispatch_queue_t playbackQueue;
 @property (nonatomic, strong) dispatch_source_t timerSource;
 @property (nonatomic, assign) NSTimeInterval startTime;
+@property (nonatomic, strong) NSMutableArray<NSString *> *playbackLogs;
 
 @end
 
@@ -37,8 +38,17 @@
         _isPlaying = NO;
         _isPaused = NO;
         _waitTimeAfterFinish = 0.0;
+        _playbackLogs = [NSMutableArray array];
     }
     return self;
+}
+
+- (void)clearLogs {
+    [_playbackLogs removeAllObjects];
+}
+
+- (NSString *)getLogs {
+    return [_playbackLogs componentsJoinedByString:@"\n"];
 }
 
 - (void)setEvents:(NSArray<TouchEvent *> *)events {
@@ -60,15 +70,56 @@
 
 - (void)play {
     if (_isPlaying) {
-        NSLog(@"[TouchPlayer] Already playing");
+        NSLog(@"[TouchPlayer] 播放已在进行中");
         return;
     }
     if (!_events || _events.count == 0) {
-        NSLog(@"[TouchPlayer] No events to play");
+        NSLog(@"[TouchPlayer] 没有可播放的事件");
         return;
     }
     
-    NSLog(@"[TouchPlayer] Starting playback with %lu events", (unsigned long)_events.count);
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+    NSString *startTimeStr = [formatter stringFromDate:[NSDate date]];
+    
+    // 收集日志
+    [_playbackLogs removeAllObjects];
+    [_playbackLogs addObject:@"════════════════════════════════════"];
+    [_playbackLogs addObject:@"           TouchAuto 播放日志"];
+    [_playbackLogs addObject:@"════════════════════════════════════"];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"开始时间: %@", startTimeStr]];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"事件数量: %lu 个", (unsigned long)_events.count]];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"循环次数: %@", _infiniteLoop ? @"无限" : [NSString stringWithFormat:@"%lu", (unsigned long)_loopCount]]];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"播放速度: %.1fx", _playbackSpeed]];
+    if (_randomOffset > 0) {
+        [_playbackLogs addObject:[NSString stringWithFormat:@"随机偏移: ±%.1f", _randomOffset]];
+    }
+    if (_randomDelayRange > 0) {
+        [_playbackLogs addObject:[NSString stringWithFormat:@"随机延迟: ±%.2f秒", _randomDelayRange]];
+    }
+    if (_waitTimeAfterFinish > 0) {
+        [_playbackLogs addObject:[NSString stringWithFormat:@"完成后等待: %.1f秒", _waitTimeAfterFinish]];
+    }
+    [_playbackLogs addObject:@"════════════════════════════════════"];
+    [_playbackLogs addObject:@"           播放事件详情"];
+    [_playbackLogs addObject:@"════════════════════════════════════"];
+    
+    NSLog(@"[TouchPlayer] ========== 开始播放 ==========");
+    NSLog(@"[TouchPlayer] 开始时间: %@", startTimeStr);
+    NSLog(@"[TouchPlayer] 事件数量: %lu", (unsigned long)_events.count);
+    NSLog(@"[TouchPlayer] 循环次数: %@", _infiniteLoop ? @"无限" : [NSString stringWithFormat:@"%lu", (unsigned long)_loopCount]);
+    NSLog(@"[TouchPlayer] 播放速度: %.1fx", _playbackSpeed);
+    if (_randomOffset > 0) {
+        NSLog(@"[TouchPlayer] 随机偏移: ±%.1f", _randomOffset);
+    }
+    if (_randomDelayRange > 0) {
+        NSLog(@"[TouchPlayer] 随机延迟: ±%.2f秒", _randomDelayRange);
+    }
+    if (_waitTimeAfterFinish > 0) {
+        NSLog(@"[TouchPlayer] 完成后等待: %.1f秒", _waitTimeAfterFinish);
+    }
+    NSLog(@"[TouchPlayer] ==============================");
+    
     _isPlaying = YES;
     _isPaused = NO;
     _startTime = [[NSDate date] timeIntervalSince1970];
@@ -83,6 +134,12 @@
 - (void)pause {
     if (!_isPlaying || _isPaused) return;
     
+    [_playbackLogs addObject:@"──────────── 暂停播放 ────────────"];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"已播放: %lu/%lu 事件", (unsigned long)_currentIndex, (unsigned long)_events.count]];
+    
+    NSLog(@"[TouchPlayer] ========== 暂停播放 ==========");
+    NSLog(@"[TouchPlayer] 已播放: %lu/%lu 事件", (unsigned long)_currentIndex, (unsigned long)_events.count);
+    
     _isPaused = YES;
     
     if (_timerSource) {
@@ -96,6 +153,28 @@
 }
 
 - (void)stop {
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    [formatter setDateFormat:@"HH:mm:ss"];
+    NSString *stopTimeStr = [formatter stringFromDate:[NSDate date]];
+    
+    NSTimeInterval totalTime = [[NSDate date] timeIntervalSince1970] - _startTime;
+    
+    [_playbackLogs addObject:@"════════════════════════════════════"];
+    [_playbackLogs addObject:@"           播放已停止"];
+    [_playbackLogs addObject:@"════════════════════════════════════"];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"停止时间: %@", stopTimeStr]];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"已播放: %lu/%lu 事件", (unsigned long)_currentIndex, (unsigned long)_events.count]];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"已完成: %lu 轮", (unsigned long)_currentLoop]];
+    [_playbackLogs addObject:[NSString stringWithFormat:@"已耗时: %.2f 秒", totalTime]];
+    [_playbackLogs addObject:@"════════════════════════════════════"];
+    
+    NSLog(@"[TouchPlayer] ========== 停止播放 ==========");
+    NSLog(@"[TouchPlayer] 停止时间: %@", stopTimeStr);
+    NSLog(@"[TouchPlayer] 已播放: %lu/%lu 事件", (unsigned long)_currentIndex, (unsigned long)_events.count);
+    NSLog(@"[TouchPlayer] 已完成: %lu 轮", (unsigned long)_currentLoop);
+    NSLog(@"[TouchPlayer] 已耗时: %.2f 秒", totalTime);
+    NSLog(@"[TouchPlayer] =============================");
+    
     _isPlaying = NO;
     _isPaused = NO;
     _currentIndex = 0;
@@ -121,9 +200,13 @@
     if (_currentIndex >= _events.count) {
         _currentLoop++;
         
+        [_playbackLogs addObject:[NSString stringWithFormat:@"第 %lu 轮播放完成", (unsigned long)_currentLoop]];
+        NSLog(@"[TouchPlayer] 第 %lu 轮播放完成", (unsigned long)_currentLoop);
+        
         if (_infiniteLoop || _currentLoop < _loopCount) {
             if (_waitTimeAfterFinish > 0) {
-                NSLog(@"[TouchPlayer] Waiting %f seconds before next loop...", _waitTimeAfterFinish);
+                [_playbackLogs addObject:[NSString stringWithFormat:@"等待 %.1f 秒后开始第 %lu 轮...", _waitTimeAfterFinish, (unsigned long)(_currentLoop + 1)]];
+                NSLog(@"[TouchPlayer] 等待 %.1f 秒后开始第 %lu 轮...", _waitTimeAfterFinish, (unsigned long)(_currentLoop + 1));
                 __weak __typeof(self) weakSelf = self;
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_waitTimeAfterFinish * NSEC_PER_SEC)), _playbackQueue, ^{
                     __strong __typeof(weakSelf) strongSelf = weakSelf;
@@ -135,6 +218,22 @@
             }
             _currentIndex = 0;
         } else {
+            NSTimeInterval totalTime = [[NSDate date] timeIntervalSince1970] - _startTime;
+            
+            [_playbackLogs addObject:@"════════════════════════════════════"];
+            [_playbackLogs addObject:@"           播放全部完成"];
+            [_playbackLogs addObject:@"════════════════════════════════════"];
+            [_playbackLogs addObject:[NSString stringWithFormat:@"总播放轮数: %lu", (unsigned long)_currentLoop]];
+            [_playbackLogs addObject:[NSString stringWithFormat:@"总事件数: %lu", (unsigned long)_events.count]];
+            [_playbackLogs addObject:[NSString stringWithFormat:@"总耗时: %.2f 秒", totalTime]];
+            [_playbackLogs addObject:@"════════════════════════════════════"];
+            
+            NSLog(@"[TouchPlayer] ========== 播放完成 ==========");
+            NSLog(@"[TouchPlayer] 总播放轮数: %lu", (unsigned long)_currentLoop);
+            NSLog(@"[TouchPlayer] 总事件数: %lu", (unsigned long)_events.count);
+            NSLog(@"[TouchPlayer] 总耗时: %.2f 秒", totalTime);
+            NSLog(@"[TouchPlayer] =============================");
+            
             [self stop];
             return;
         }
@@ -184,9 +283,37 @@
         location.y += offsetY;
     }
     
-    NSLog(@"[TouchPlayer] Injecting event at (%f, %f), type: %ld", location.x, location.y, (long)event.type);
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    [formatter setDateFormat:@"HH:mm:ss.SSS"];
+    NSString *currentTime = [formatter stringFromDate:[NSDate date]];
     
-    [self triggerTouchAtLocation:location withType:event.type];
+    // 修复要求1: 统一将所有事件视为点击结束事件处理
+    NSString *eventTypeStr = @"回放(强制结束)";
+    
+    NSString *viewInfo = event.viewClass ?: @"未知视图";
+    if (event.accessibilityIdentifier.length > 0) {
+        viewInfo = [NSString stringWithFormat:@"%@ [id:%@]", viewInfo, event.accessibilityIdentifier];
+    }
+    
+    NSString *logEntry = [NSString stringWithFormat:@"[%lu/%lu] %@ | %@ | (%.1f, %.1f) | %@",
+                          (unsigned long)(_currentIndex + 1),
+                          (unsigned long)_events.count,
+                          currentTime,
+                          eventTypeStr,
+                          location.x, location.y,
+                          viewInfo];
+    [_playbackLogs addObject:logEntry];
+    
+    NSLog(@"[TouchPlayer] [事件 %lu/%lu] 时间:%@ 类型:%@ 坐标:(%.1f, %.1f) 视图:%@",
+          (unsigned long)(_currentIndex + 1),
+          (unsigned long)_events.count,
+          currentTime,
+          eventTypeStr,
+          location.x, location.y,
+          viewInfo);
+    
+    // 修复要求1: 强制使用 TouchEventTypeEnded
+    [self triggerTouchAtLocation:location withType:TouchEventTypeEnded];
 }
 
 - (void)triggerTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
@@ -196,31 +323,103 @@
         return;
     }
     
+    // 修复要求2: 转换坐标 - 录制的是屏幕坐标，hitTest 需要 window 坐标
+    CGPoint windowPoint = [keyWindow convertPoint:location fromWindow:nil];
+    
     // 使用 hitTest 定位目标视图
-    UIView *hitView = [keyWindow hitTest:location withEvent:nil];
+    UIView *hitView = [keyWindow hitTest:windowPoint withEvent:nil];
+    
+    // 修复要求3: 增加调试日志
+    NSLog(@"[TouchPlayer] 原始坐标:(%.2f, %.2f) 转换后坐标:(%.2f, %.2f)", 
+          location.x, location.y, windowPoint.x, windowPoint.y);
+    
     if (!hitView) {
-        NSLog(@"[TouchPlayer] No view found at location (%f, %f)", location.x, location.y);
+        NSLog(@"[TouchPlayer] No view found at location (%f, %f)", windowPoint.x, windowPoint.y);
         return;
     }
     
-    NSLog(@"[TouchPlayer] Hit view: %@", hitView);
+    // 修复要求3: 打印命中视图信息和父视图链
+    NSLog(@"[TouchPlayer] Hit view: %@ frame:%@", 
+          NSStringFromClass(hitView.class), NSStringFromCGRect(hitView.frame));
+    
+    // 打印父视图链
+    NSMutableString *superChain = [NSMutableString string];
+    UIView *superview = hitView.superview;
+    while (superview) {
+        if (superChain.length > 0) [superChain appendString:@" -> "];
+        [superChain appendFormat:@"%@", NSStringFromClass(superview.class)];
+        superview = superview.superview;
+        // 防止无限循环
+        if (superChain.length > 500) break;
+    }
+    NSLog(@"[TouchPlayer] Superview chain: %@", superChain);
+    
+    // 修复要求5: 如果 hitView 不可交互，递归向上查找父级
+    UIView *targetView = [self findInteractiveSuperview:hitView];
+    if (targetView != hitView) {
+        NSLog(@"[TouchPlayer] Found interactive superview: %@ frame:%@", 
+              NSStringFromClass(targetView.class), NSStringFromCGRect(targetView.frame));
+    }
     
     // 根据视图类型触发相应行为
-    [self triggerActionForView:hitView atLocation:location type:type];
+    [self triggerActionForView:targetView atLocation:windowPoint type:type];
+}
+
+- (UIView *)findInteractiveSuperview:(UIView *)view {
+    // 如果当前视图是可交互的类型，直接返回
+    if ([self isInteractiveView:view]) {
+        return view;
+    }
+    
+    // 向上查找父级
+    UIView *superview = view.superview;
+    while (superview) {
+        if ([self isInteractiveView:superview]) {
+            return superview;
+        }
+        superview = superview.superview;
+    }
+    
+    // 找不到可交互的父级，返回原始视图
+    return view;
+}
+
+- (BOOL)isInteractiveView:(UIView *)view {
+    if (!view || view.hidden || !view.userInteractionEnabled) {
+        return NO;
+    }
+    
+    // 检查是否是可交互的视图类型
+    if ([view isKindOfClass:[UIButton class]]) return YES;
+    if ([view isKindOfClass:[UIControl class]]) return YES;
+    if ([view isKindOfClass:[UITableViewCell class]]) return YES;
+    if ([view isKindOfClass:[UICollectionViewCell class]]) return YES;
+    if ([view isKindOfClass:[UIScrollView class]]) return YES;
+    if ([view isKindOfClass:[WKWebView class]]) return YES;
+    
+    // 检查是否有 gesture recognizers
+    if (view.gestureRecognizers && view.gestureRecognizers.count > 0) {
+        return YES;
+    }
+    
+    return NO;
 }
 
 - (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type {
-    // 检查是否是结束事件（TouchUpInside）
-    BOOL isTouchUp = (type == TouchEventTypeEnded);
+    // 修复要求4: 优先处理 gesture recognizer
+    if ([self triggerGestureRecognizerAction:view atLocation:location]) {
+        NSLog(@"[TouchPlayer] Triggered gesture recognizer action");
+        return;
+    }
     
     // 1. 尝试触发 UIButton
-    if ([self triggerUIButtonAction:view isTouchUp:isTouchUp]) {
+    if ([self triggerUIButtonAction:view]) {
         NSLog(@"[TouchPlayer] Triggered UIButton action");
         return;
     }
     
     // 2. 尝试触发 UIControl
-    if ([self triggerUIControlAction:view isTouchUp:isTouchUp]) {
+    if ([self triggerUIControlAction:view]) {
         NSLog(@"[TouchPlayer] Triggered UIControl action");
         return;
     }
@@ -255,37 +454,135 @@
     }
 }
 
-- (BOOL)triggerUIButtonAction:(UIView *)view isTouchUp:(BOOL)isTouchUp {
-    if (![view isKindOfClass:[UIButton class]]) {
+- (BOOL)triggerGestureRecognizerAction:(UIView *)view atLocation:(CGPoint)location {
+    if (!view.gestureRecognizers || view.gestureRecognizers.count == 0) {
         return NO;
     }
     
-    UIButton *button = (UIButton *)view;
+    NSLog(@"[TouchPlayer] Found %lu gesture recognizers on %@", 
+          (unsigned long)view.gestureRecognizers.count, NSStringFromClass(view.class));
     
-    if (isTouchUp) {
-        // 触发按钮点击
-        [button sendActionsForControlEvents:UIControlEventTouchUpInside];
+    for (UIGestureRecognizer *gesture in view.gestureRecognizers) {
+        if (!gesture.enabled || gesture.state == UIGestureRecognizerStateCancelled) {
+            continue;
+        }
+        
+        NSLog(@"[TouchPlayer] Checking gesture: %@ state:%ld", 
+              NSStringFromClass(gesture.class), (long)gesture.state);
+        
+        // 触发 tap gesture
+        if ([gesture isKindOfClass:[UITapGestureRecognizer class]]) {
+            UITapGestureRecognizer *tapGesture = (UITapGestureRecognizer *)gesture;
+            // 设置状态为已识别
+            [self simulateGestureRecognizer:tapGesture onView:view atLocation:location];
+            return YES;
+        }
+        
+        // 触发 long press gesture
+        if ([gesture isKindOfClass:[UILongPressGestureRecognizer class]]) {
+            UILongPressGestureRecognizer *longPressGesture = (UILongPressGestureRecognizer *)gesture;
+            [self simulateGestureRecognizer:longPressGesture onView:view atLocation:location];
+            return YES;
+        }
+        
+        // 触发其他自定义 gesture
+        [self simulateGestureRecognizer:gesture onView:view atLocation:location];
         return YES;
     }
     
     return NO;
 }
 
-- (BOOL)triggerUIControlAction:(UIView *)view isTouchUp:(BOOL)isTouchUp {
+- (void)simulateGestureRecognizer:(UIGestureRecognizer *)gesture onView:(UIView *)view atLocation:(CGPoint)location {
+    // 使用私有 API 触发 gesture recognizer
+    // 方法1: 直接设置状态
+    if ([gesture respondsToSelector:NSSelectorFromString(@"_setRecognized:")]) {
+        [gesture performSelector:NSSelectorFromString(@"_setRecognized:") withObject:@(YES)];
+    }
+    
+    // 方法2: 模拟 touchesBegan/touchesEnded
+    UITouch *touch = [self createSimulatedTouchAtLocation:location inView:view];
+    if (touch) {
+        NSSet *touches = [NSSet setWithObject:touch];
+        UIEvent *event = [self createSimulatedEventWithTouches:touches];
+        
+        [gesture touchesBegan:touches withEvent:event];
+        [gesture touchesEnded:touches withEvent:event];
+    }
+    
+    NSLog(@"[TouchPlayer] Simulated gesture: %@", NSStringFromClass(gesture.class));
+}
+
+- (UITouch *)createSimulatedTouchAtLocation:(CGPoint)location inView:(UIView *)view {
+    Class UITouchClass = NSClassFromString(@"UITouch");
+    if (!UITouchClass) return nil;
+    
+    UITouch *touch = [[UITouchClass alloc] init];
+    
+    // 使用 runtime 设置属性
+    SEL setLocationInWindowSel = NSSelectorFromString(@"_setLocationInWindow:");
+    if ([touch respondsToSelector:setLocationInWindowSel]) {
+        [touch performSelector:setLocationInWindowSel withObject:[NSValue valueWithCGPoint:location]];
+    }
+    
+    SEL setViewSel = NSSelectorFromString(@"_setView:");
+    if ([touch respondsToSelector:setViewSel]) {
+        [touch performSelector:setViewSel withObject:view];
+    }
+    
+    SEL setPhaseSel = NSSelectorFromString(@"_setPhase:");
+    if ([touch respondsToSelector:setPhaseSel]) {
+        [touch performSelector:setPhaseSel withObject:@(UITouchPhaseBegan)];
+    }
+    
+    return touch;
+}
+
+- (UIEvent *)createSimulatedEventWithTouches:(NSSet *)touches {
+    Class UIEventClass = NSClassFromString(@"UIEvent");
+    if (!UIEventClass) return nil;
+    
+    UIEvent *event = [[UIEventClass alloc] init];
+    
+    SEL setTouchesSel = NSSelectorFromString(@"_setTouches:");
+    if ([event respondsToSelector:setTouchesSel]) {
+        [event performSelector:setTouchesSel withObject:touches];
+    }
+    
+    return event;
+}
+
+- (BOOL)triggerUIButtonAction:(UIView *)view {
+    if (![view isKindOfClass:[UIButton class]]) {
+        return NO;
+    }
+    
+    UIButton *button = (UIButton *)view;
+    
+    if (!button.enabled || button.hidden) {
+        return NO;
+    }
+    
+    // 触发按钮点击
+    [button sendActionsForControlEvents:UIControlEventTouchUpInside];
+    return YES;
+}
+
+- (BOOL)triggerUIControlAction:(UIView *)view {
     if (![view isKindOfClass:[UIControl class]]) {
         return NO;
     }
     
     UIControl *control = (UIControl *)view;
     
-    if (isTouchUp) {
-        // 触发所有触摸事件
-        [control sendActionsForControlEvents:UIControlEventTouchUpInside];
-        [control sendActionsForControlEvents:UIControlEventValueChanged];
-        return YES;
+    if (!control.enabled || control.hidden) {
+        return NO;
     }
     
-    return NO;
+    // 触发所有触摸事件
+    [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [control sendActionsForControlEvents:UIControlEventValueChanged];
+    return YES;
 }
 
 - (BOOL)triggerUITableViewAction:(UIView *)view atLocation:(CGPoint)location {
@@ -305,8 +602,10 @@
         return NO;
     }
     
-    // 转换坐标
-    CGPoint tableViewLocation = [tableView convertPoint:location fromView:view];
+    // 修复: location 已经是 window 坐标，需要转换为 tableView 坐标
+    CGPoint tableViewLocation = [tableView convertPoint:location fromView:nil];
+    
+    NSLog(@"[TouchPlayer] TableView location: (%.2f, %.2f)", tableViewLocation.x, tableViewLocation.y);
     
     // 获取 indexPath
     NSIndexPath *indexPath = [tableView indexPathForRowAtPoint:tableViewLocation];
@@ -351,8 +650,10 @@
         return NO;
     }
     
-    // 转换坐标
-    CGPoint collectionViewLocation = [collectionView convertPoint:location fromView:view];
+    // 修复: location 已经是 window 坐标，需要转换为 collectionView 坐标
+    CGPoint collectionViewLocation = [collectionView convertPoint:location fromView:nil];
+    
+    NSLog(@"[TouchPlayer] CollectionView location: (%.2f, %.2f)", collectionViewLocation.x, collectionViewLocation.y);
     
     // 获取 indexPath
     NSIndexPath *indexPath = [collectionView indexPathForItemAtPoint:collectionViewLocation];
@@ -394,12 +695,16 @@
         return NO;
     }
     
-    NSLog(@"[TouchPlayer] ScrollView found");
+    // 修复: location 已经是 window 坐标，需要转换为 scrollView 坐标
+    CGPoint scrollViewLocation = [scrollView convertPoint:location fromView:nil];
+    
+    NSLog(@"[TouchPlayer] ScrollView found, location: (%.2f, %.2f)", 
+          scrollViewLocation.x, scrollViewLocation.y);
     
     // 滚动到点击位置
     CGPoint contentOffset = scrollView.contentOffset;
-    contentOffset.x += (scrollView.bounds.size.width / 2 - location.x);
-    contentOffset.y += (scrollView.bounds.size.height / 2 - location.y);
+    contentOffset.x += (scrollView.bounds.size.width / 2 - scrollViewLocation.x);
+    contentOffset.y += (scrollView.bounds.size.height / 2 - scrollViewLocation.y);
     
     [scrollView setContentOffset:contentOffset animated:YES];
     
@@ -425,8 +730,10 @@
     
     NSLog(@"[TouchPlayer] WKWebView found");
     
-    // 转换坐标为 web view 坐标
-    CGPoint webViewLocation = [webView convertPoint:location fromView:view];
+    // 修复: location 已经是 window 坐标，需要转换为 web view 坐标
+    CGPoint webViewLocation = [webView convertPoint:location fromView:nil];
+    
+    NSLog(@"[TouchPlayer] WKWebView location: (%.2f, %.2f)", webViewLocation.x, webViewLocation.y);
     
     // 构建 JavaScript 点击代码
     NSString *javascript = [NSString stringWithFormat:

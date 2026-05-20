@@ -346,13 +346,13 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
     
     UILabel *logsLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 16, [UIScreen mainScreen].bounds.size.width - 32, 0)];
     logsLabel.numberOfLines = 0;
-    logsLabel.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
+    logsLabel.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
     logsLabel.textColor = [UIColor darkGrayColor];
     
     NSMutableString *logText = [NSMutableString string];
-    [logText appendString:@"═══════════════════════════════\n"];
-    [logText appendString:@"         TouchAuto 运行日志\n"];
-    [logText appendString:@"═══════════════════════════════\n\n"];
+    [logText appendString:@"══════════════════════════════════════════════════════\n"];
+    [logText appendString:@"                     TouchAuto 运行日志\n"];
+    [logText appendString:@"══════════════════════════════════════════════════════\n\n"];
     
     TouchRecorder *recorder = [TouchRecorder sharedInstance];
     TouchPlayer *player = [TouchPlayer sharedInstance];
@@ -363,30 +363,45 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event);
     [logText appendFormat:@"▶ 暂停状态: %@\n", player.isPaused ? @"已暂停" : @"未暂停"];
     [logText appendFormat:@"▶ 循环次数: %lu/%lu\n\n", (unsigned long)player.currentLoop, (unsigned long)player.loopCount];
     
-    [logText appendString:@"═══════════════════════════════\n"];
-    [logText appendString:@"最近操作记录:\n"];
-    [logText appendString:@"═══════════════════════════════\n"];
+    // 显示播放时间日志
+    NSString *playbackLogs = [player getLogs];
+    if (playbackLogs && playbackLogs.length > 0) {
+        [logText appendString:@"══════════════════════════════════════════════════════\n"];
+        [logText appendString:@"播放时间日志:\n"];
+        [logText appendString:@"══════════════════════════════════════════════════════\n"];
+        [logText appendString:playbackLogs];
+        [logText appendString:@"\n"];
+    }
+    
+    [logText appendString:@"══════════════════════════════════════════════════════\n"];
+    [logText appendString:@"录制事件记录:\n"];
+    [logText appendString:@"══════════════════════════════════════════════════════\n"];
     
     if (recorder.recordedEvents.count > 0) {
         [logText appendFormat:@"已录制 %lu 个触摸事件\n", (unsigned long)recorder.recordedEvents.count];
-        for (NSUInteger i = 0; i < MIN(5, recorder.recordedEvents.count); i++) {
+        for (NSUInteger i = 0; i < MIN(10, recorder.recordedEvents.count); i++) {
             TouchEvent *event = recorder.recordedEvents[i];
-            [logText appendFormat:@"  %lu. 类型:%@ X:%.1f Y:%.1f\n", 
+            NSString *viewInfo = event.viewClass ?: @"-";
+            if (event.accessibilityIdentifier.length > 0) {
+                viewInfo = [NSString stringWithFormat:@"%@ [%@]", viewInfo, event.accessibilityIdentifier];
+            }
+            [logText appendFormat:@"  %lu. %@ | X:%.1f Y:%.1f | %@\n",
              (unsigned long)(i + 1),
              [self typeStringForTouchType:event.type],
              event.location.x,
-             event.location.y];
+             event.location.y,
+             viewInfo];
         }
-        if (recorder.recordedEvents.count > 5) {
-            [logText appendFormat:@"  ... 还有 %lu 个事件\n", (unsigned long)(recorder.recordedEvents.count - 5)];
+        if (recorder.recordedEvents.count > 10) {
+            [logText appendFormat:@"  ... 还有 %lu 个事件\n", (unsigned long)(recorder.recordedEvents.count - 10)];
         }
     } else {
         [logText appendString:@"暂无录制事件\n"];
     }
     
-    [logText appendString:@"\n═══════════════════════════════\n"];
+    [logText appendString:@"\n══════════════════════════════════════════════════════\n"];
     [logText appendFormat:@"生成时间: %@\n", [[NSDate date] description]];
-    [logText appendString:@"═══════════════════════════════\n"];
+    [logText appendString:@"══════════════════════════════════════════════════════\n"];
     
     logsLabel.text = logText;
     [logsLabel sizeToFit];

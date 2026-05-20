@@ -27,5 +27,7 @@ typedef void (^PlaybackProgressBlock)(NSUInteger currentIndex, NSUInteger totalC
 - (void)stop;
 - (void)setLoopCount:(NSUInteger)count;
 - (void)setInfiniteLoop:(BOOL)infinite;
+- (NSString *)getLogs;
+- (void)clearLogs;
 
 @end

@@ -834,6 +834,9 @@
     
     [self dismissPlaybackPanel];
     
+    // 启动播放！
+    [player play];
+    
     if (_playBlock) {
         _playBlock();
     }

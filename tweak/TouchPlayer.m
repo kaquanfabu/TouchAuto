@@ -2,6 +2,7 @@
 #import "FloatingPanel.h"
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
+#import <IOKit/hid/IOHIDEvent.h>
 
 @interface TouchPlayer ()
 
@@ -332,52 +333,48 @@
 }
 
 - (void)triggerTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
-    UIWindow *keyWindow = [self getKeyWindow];
-    if (!keyWindow) {
-        NSLog(@"[TouchPlayer] No key window found");
-        return;
-    }
-    
-    // 修复要求2: 转换坐标 - 录制的是屏幕坐标，hitTest 需要 window 坐标
-    CGPoint windowPoint = [keyWindow convertPoint:location fromWindow:nil];
-    
-    // 使用 hitTest 定位目标视图
-    UIView *hitView = [keyWindow hitTest:windowPoint withEvent:nil];
-    
-    // 修复要求3: 增加调试日志
-    NSLog(@"[TouchPlayer] 原始坐标:(%.2f, %.2f) 转换后坐标:(%.2f, %.2f)", 
-          location.x, location.y, windowPoint.x, windowPoint.y);
-    
-    if (!hitView) {
-        NSLog(@"[TouchPlayer] No view found at location (%f, %f)", windowPoint.x, windowPoint.y);
-        return;
-    }
-    
-    // 修复要求3: 打印命中视图信息和父视图链
-    NSLog(@"[TouchPlayer] Hit view: %@ frame:%@", 
-          NSStringFromClass(hitView.class), NSStringFromCGRect(hitView.frame));
-    
-    // 打印父视图链
-    NSMutableString *superChain = [NSMutableString string];
-    UIView *superview = hitView.superview;
-    while (superview) {
-        if (superChain.length > 0) [superChain appendString:@" -> "];
-        [superChain appendFormat:@"%@", NSStringFromClass(superview.class)];
-        superview = superview.superview;
-        // 防止无限循环
-        if (superChain.length > 500) break;
-    }
-    NSLog(@"[TouchPlayer] Superview chain: %@", superChain);
-    
-    // 修复要求5: 如果 hitView 不可交互，递归向上查找父级
-    UIView *targetView = [self findInteractiveSuperview:hitView];
-    if (targetView != hitView) {
-        NSLog(@"[TouchPlayer] Found interactive superview: %@ frame:%@", 
-              NSStringFromClass(targetView.class), NSStringFromCGRect(targetView.frame));
-    }
-    
-    // 根据视图类型触发相应行为
-    [self triggerActionForView:targetView atLocation:windowPoint type:type];
+    UIWindow *window = [self getKeyWindow];
+    if (!window) return;
+
+    CGPoint p = [window convertPoint:location fromWindow:nil];
+
+    BOOL isDown = (type != TouchEventTypeEnded);
+
+    IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(
+        kCFAllocatorDefault,
+        mach_absolute_time(),
+        kIOHIDDigitizerTransducerTypeHand,
+        0,0,0,0,0,0,0,0,
+        isDown,
+        isDown,
+        NULL
+    );
+
+    IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(
+        kCFAllocatorDefault,
+        mach_absolute_time(),
+        1,
+        2,
+        0,
+        p.x,
+        p.y,
+        0,
+        0.4,
+        0.4,
+        isDown,
+        isDown,
+        0
+    );
+
+    IOHIDEventAppendEvent(parent, child);
+
+    UIEvent *event = [[NSClassFromString(@"UITouchesEvent") alloc] init];
+    [event _setHIDEvent:parent];
+
+    [[UIApplication sharedApplication] sendEvent:event];
+
+    CFRelease(child);
+    CFRelease(parent);
 }
 
 - (UIView *)findInteractiveSuperview:(UIView *)view {
@@ -386,69 +383,17 @@
         return view;
     }
     
-    // 向下查找子视图中带有 gesture 的视图
-    UIView *foundView = [self findInteractiveSubview:view];
-    if (foundView) {
-        return foundView;
-    }
-    
     // 向上查找父级
     UIView *superview = view.superview;
     while (superview) {
         if ([self isInteractiveView:superview]) {
             return superview;
         }
-        // 同时检查父级的子视图
-        foundView = [self findInteractiveSubview:superview];
-        if (foundView) {
-            return foundView;
-        }
         superview = superview.superview;
     }
     
     // 找不到可交互的父级，返回原始视图
     return view;
-}
-
-- (UIView *)findInteractiveSubview:(UIView *)view {
-    // 遍历所有子视图，查找带有 gesture 的视图或可交互控件
-    for (UIView *subview in view.subviews) {
-        // 优先检查 UIButton
-        if ([subview isKindOfClass:[UIButton class]]) {
-            UIButton *button = (UIButton *)subview;
-            if (button.enabled && !button.hidden) {
-                return subview;
-            }
-        }
-        
-        // 检查其他 UIControl
-        if ([subview isKindOfClass:[UIControl class]]) {
-            UIControl *control = (UIControl *)subview;
-            if (control.enabled && !control.hidden) {
-                return subview;
-            }
-        }
-        
-        // 检查子视图是否有 gesture（即使 userInteractionEnabled = NO）
-        if (subview.gestureRecognizers && subview.gestureRecognizers.count > 0) {
-            // 检查是否有可用的 tap gesture
-            for (UIGestureRecognizer *gesture in subview.gestureRecognizers) {
-                if (gesture.enabled && [gesture isKindOfClass:[UITapGestureRecognizer class]]) {
-                    return subview;
-                }
-            }
-            // 如果有任何 gesture，返回这个视图
-            return subview;
-        }
-        
-        // 递归查找子视图
-        UIView *foundView = [self findInteractiveSubview:subview];
-        if (foundView) {
-            return foundView;
-        }
-    }
-    
-    return nil;
 }
 
 - (BOOL)isInteractiveView:(UIView *)view {
@@ -482,16 +427,6 @@
     
     NSLog(@"[TouchPlayer] triggerActionForView: %@ at (%.2f, %.2f)", 
           NSStringFromClass(view.class), location.x, location.y);
-    
-    // 修复：先向下查找子视图中的可交互控件（如 UIButton）
-    UIView *interactiveSubview = [self findInteractiveSubview:view];
-    if (interactiveSubview && ![interactiveSubview isKindOfClass:[UITableView class]] && 
-        ![interactiveSubview isKindOfClass:[UICollectionView class]]) {
-        NSLog(@"[TouchPlayer] Found interactive subview: %@", NSStringFromClass(interactiveSubview.class));
-        // 递归调用处理子视图
-        [self triggerActionForView:interactiveSubview atLocation:location type:type];
-        return;
-    }
     
     // 修复要求4: 优先处理 gesture recognizer
     if ([self triggerGestureRecognizerAction:view atLocation:location]) {

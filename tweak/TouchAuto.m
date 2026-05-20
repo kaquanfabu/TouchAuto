@@ -564,7 +564,7 @@ static void swizzledSendEvent(id self, SEL _cmd, UIEvent *event) {
     
     // 调用原始方法
     if (gOriginalSendEvent) {
-        gOriginalSendEvent(self, _cmd, event);
+        ((void (*)(id, SEL, UIEvent *))gOriginalSendEvent)(self, _cmd, event);
     }
 }
 

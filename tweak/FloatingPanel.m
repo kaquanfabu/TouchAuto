@@ -875,4 +875,36 @@
     }
 }
 
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    // 如果面板不可见，直接返回 nil，允许事件穿透
+    if (!_isVisible) {
+        return nil;
+    }
+    
+    // 先检查是否点击在 contentView 上
+    if (_contentView && [_contentView pointInside:[self convertPoint:point toView:_contentView] withEvent:event]) {
+        // 在 contentView 内，继续正常的 hitTest
+        UIView *hitView = [super hitTest:point withEvent:event];
+        return hitView;
+    }
+    
+    // 点击在空白区域，返回 nil 允许事件穿透
+    return nil;
+}
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    // 如果面板不可见，不接收事件
+    if (!_isVisible) {
+        return NO;
+    }
+    
+    // 只有点击在 contentView 内才响应事件
+    if (_contentView && [_contentView pointInside:[self convertPoint:point toView:_contentView] withEvent:event]) {
+        return YES;
+    }
+    
+    // 空白区域不响应，允许穿透
+    return NO;
+}
+
 @end

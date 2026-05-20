@@ -615,7 +615,8 @@
             [invocation getReturnValue:&targets];
         }
         
-        for (id target in targets) {
+        for (__strong id targetObj in targets) {
+            id __unsafe_unretained target = targetObj;
             SEL actionsForTargetSel = NSSelectorFromString(@"actionsForTarget:forControlEvent:");
             if ([control respondsToSelector:actionsForTargetSel]) {
                 NSArray *actions = nil;
@@ -624,7 +625,8 @@
                     NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
                     [invocation setSelector:actionsForTargetSel];
                     [invocation setTarget:control];
-                    [invocation setArgument:&target atIndex:2];
+                    void *targetPtr = (__bridge void *)target;
+                    [invocation setArgument:&targetPtr atIndex:2];
                     NSNumber *eventNum = @(UIControlEventTouchUpInside);
                     [invocation setArgument:&eventNum atIndex:3];
                     [invocation invoke];
@@ -635,7 +637,7 @@
                     SEL action = NSSelectorFromString(actionName);
                     if ([target respondsToSelector:action]) {
                         NSLog(@"[TouchPlayer] Calling target action: %@ on %@", 
-                              NSStringFromSelector(action), NSStringFromClass(target.class));
+                              NSStringFromSelector(action), NSStringFromClass([target class]));
                         [self invokeSelector:action onObject:target withObject:control];
                     }
                 }

@@ -4,6 +4,53 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <mach/mach_time.h>
+#import <mach/mach_time.h>
+#import <objc/message.h>
+
+typedef struct __IOHIDEvent *IOHIDEventRef;
+typedef uint32_t IOHIDDigitizerTransducerType;
+#define kIOHIDDigitizerTransducerTypeHand 3
+
+extern IOHIDEventRef IOHIDEventCreateDigitizerEvent(
+    CFAllocatorRef allocator,
+    AbsoluteTime timeStamp,
+    IOHIDDigitizerTransducerType type,
+    uint32_t index,
+    uint32_t identity,
+    uint32_t eventMask,
+    uint32_t buttonMask,
+    int32_t x,
+    int32_t y,
+    int32_t z,
+    int32_t tipPressure,
+    Boolean range,
+    Boolean touch,
+    CFOptionFlags options,
+    uint64_t reserved
+);
+
+extern IOHIDEventRef IOHIDEventCreateDigitizerFingerEvent(
+    CFAllocatorRef allocator,
+    AbsoluteTime timeStamp,
+    uint32_t index,
+    uint32_t identity,
+    uint32_t eventMask,
+    CGFloat x,
+    CGFloat y,
+    CGFloat z,
+    CGFloat tipPressure,
+    CGFloat twist,
+    Boolean range,
+    Boolean touch,
+    CFOptionFlags options
+);
+
+extern void IOHIDEventAppendEvent(IOHIDEventRef parent, IOHIDEventRef child, CFOptionFlags flags);
+
+@interface UIEvent (Private)
+- (void)_setHIDEvent:(IOHIDEventRef)event;
+@end
+
 
 static inline AbsoluteTime TAAbsoluteTimeNow(void) {
     uint64_t t = mach_absolute_time();
@@ -386,7 +433,7 @@ static inline AbsoluteTime TAAbsoluteTimeNow(void) {
         0
     );
 
-    IOHIDEventAppendEvent(parent, child);
+    IOHIDEventAppendEvent(parent, child,0);
 
     UIEvent *event = [[NSClassFromString(@"UITouchesEvent") alloc] init];
     SEL hidSel = NSSelectorFromString(@"_setHIDEvent:");

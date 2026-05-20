@@ -1,5 +1,5 @@
 #import "TouchPlayer.h"
-#import "TouchInjectManager.h"
+#import "TouchAuto.h"
 
 @interface TouchPlayer ()
 
@@ -78,9 +78,6 @@
         return;
     }
     
-    // 播放时禁用 FloatingPanel 交互，防止拦截触摸事件
-    [self setPanelUserInteractionEnabled:NO];
-    
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
     NSString *startTimeStr = [formatter stringFromDate:[NSDate date]];
@@ -150,9 +147,6 @@
         _timerSource = nil;
     }
     
-    // 恢复 FloatingPanel 交互
-    [self enablePanelInteraction];
-    
     if (_stateChangeBlock) {
         _stateChangeBlock(NO);
     }
@@ -191,9 +185,6 @@
         _timerSource = nil;
     }
     
-    // 恢复 FloatingPanel 交互
-    [self enablePanelInteraction];
-    
     if (_stateChangeBlock) {
         _stateChangeBlock(NO);
     }
@@ -201,43 +192,6 @@
     if (_completeBlock) {
         _completeBlock();
     }
-}
-
-- (void)enablePanelInteraction {
-    [self setPanelUserInteractionEnabled:YES];
-}
-
-- (void)setPanelUserInteractionEnabled:(BOOL)enabled {
-    Class FloatingPanelClass = NSClassFromString(@"FloatingPanel");
-    if (!FloatingPanelClass) return;
-    
-    // 获取 sharedInstance
-    SEL sharedInstanceSel = NSSelectorFromString(@"sharedInstance");
-    NSMethodSignature *signature = [FloatingPanelClass methodSignatureForSelector:sharedInstanceSel];
-    if (!signature) return;
-    
-    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-    [invocation setSelector:sharedInstanceSel];
-    [invocation setTarget:FloatingPanelClass];
-    [invocation invoke];
-    
-    __unsafe_unretained id panel = nil;
-    [invocation getReturnValue:&panel];
-    if (!panel) return;
-    
-    // 设置 userInteractionEnabled
-    SEL setUserInteractionEnabledSel = NSSelectorFromString(@"setUserInteractionEnabled:");
-    if (![panel respondsToSelector:setUserInteractionEnabledSel]) return;
-    
-    signature = [panel methodSignatureForSelector:setUserInteractionEnabledSel];
-    if (!signature) return;
-    
-    invocation = [NSInvocation invocationWithMethodSignature:signature];
-    [invocation setSelector:setUserInteractionEnabledSel];
-    [invocation setTarget:panel];
-    NSNumber *enabledNum = @(enabled);
-    [invocation setArgument:&enabledNum atIndex:2];
-    [invocation invoke];
 }
 
 - (void)executeNextEvent {
@@ -363,22 +317,72 @@
           location.x, location.y,
           viewInfo);
     
-    // 使用 TouchInjectManager 注入事件
-    TouchInjectManager *injector = [TouchInjectManager sharedInstance];
+    // 使用缓存的真实 UITouch/UIEvent 对象进行回放
+    [self replayTouchAtLocation:location withType:event.type];
+}
+
+- (void)replayTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
+    // 获取缓存的真实触摸对象
+    NSArray *cachedTouches = [TouchAuto cachedTouches];
+    NSArray *cachedEvents = [TouchAuto cachedEvents];
     
-    switch (event.type) {
-        case TouchEventTypeBegan:
-            [injector touchDown:location];
-            break;
-        case TouchEventTypeMoved:
-            [injector touchMove:location];
-            break;
-        case TouchEventTypeEnded:
-            [injector touchUp:location];
-            break;
-        case TouchEventTypeCancelled:
-            [injector touchUp:location];
-            break;
+    if (cachedTouches.count == 0 || cachedEvents.count == 0) {
+        NSLog(@"[TouchPlayer] 没有缓存的触摸对象，跳过此事件");
+        return;
+    }
+    
+    // 获取一个缓存的 UITouch 对象
+    UITouch *cachedTouch = cachedTouches.lastObject;
+    UIEvent *cachedEvent = cachedEvents.lastObject;
+    
+    if (!cachedTouch || !cachedEvent) {
+        NSLog(@"[TouchPlayer] 缓存对象无效，跳过此事件");
+        return;
+    }
+    
+    UIWindow *keyWindow = [TouchAuto getKeyWindow];
+    if (!keyWindow) {
+        NSLog(@"[TouchPlayer] 无法获取 keyWindow");
+        return;
+    }
+    
+    // 使用 KVC 设置触摸属性
+    @try {
+        // 设置 phase
+        UITouchPhase phase;
+        switch (type) {
+            case TouchEventTypeBegan: phase = UITouchPhaseBegan; break;
+            case TouchEventTypeMoved: phase = UITouchPhaseMoved; break;
+            case TouchEventTypeEnded: phase = UITouchPhaseEnded; break;
+            case TouchEventTypeCancelled: phase = UITouchPhaseCancelled; break;
+            default: phase = UITouchPhaseEnded;
+        }
+        
+        // 获取之前的位置用于 previousLocationInWindow
+        CGPoint previousLocation = [cachedTouch locationInWindow];
+        
+        // 使用 KVC 设置属性
+        [cachedTouch setValue:@(phase) forKey:@"phase"];
+        [cachedTouch setValue:[NSValue valueWithCGPoint:location] forKey:@"locationInWindow"];
+        [cachedTouch setValue:[NSValue valueWithCGPoint:previousLocation] forKey:@"previousLocationInWindow"];
+        [cachedTouch setValue:@([[NSDate date] timeIntervalSince1970]) forKey:@"timestamp"];
+        [cachedTouch setValue:keyWindow forKey:@"window"];
+        
+        // 更新事件中的触摸集合
+        NSMutableSet *touchesSet = [NSMutableSet setWithObject:cachedTouch];
+        
+        // 使用 KVC 更新事件的 touches
+        [cachedEvent setValue:touchesSet forKey:@"touches"];
+        [cachedEvent setValue:keyWindow forKey:@"window"];
+        [cachedEvent setValue:@([[NSDate date] timeIntervalSince1970]) forKey:@"timestamp"];
+        
+        NSLog(@"[TouchPlayer] 重放触摸事件: phase=%d, location=(%.1f, %.1f)", phase, location.x, location.y);
+        
+        // 发送事件
+        [[UIApplication sharedApplication] sendEvent:cachedEvent];
+        
+    } @catch (NSException *exception) {
+        NSLog(@"[TouchPlayer] KVC 设置失败: %@", exception);
     }
 }
 

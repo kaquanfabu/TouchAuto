@@ -1,6 +1,7 @@
 #import "TouchPlayer.h"
 #import "FloatingPanel.h"
 #import <WebKit/WebKit.h>
+#import <objc/runtime.h>
 
 @interface TouchPlayer ()
 
@@ -541,21 +542,18 @@
 }
 
 - (void)triggerGestureTargetActions:(UIGestureRecognizer *)gesture {
-    // 使用 runtime 获取 gesture 的 target 和 action
+    // 使用 KVC 获取 gesture 的 target 和 action
     SEL action = NULL;
     id target = nil;
     
     // 获取 action
-    Ivar actionIvar = class_getInstanceVariable([gesture class], "_action");
-    if (actionIvar) {
-        action = *(SEL *)((char *)gesture + ivar_getOffset(actionIvar));
+    NSValue *actionValue = [gesture valueForKey:@"_action"];
+    if (actionValue) {
+        action = [actionValue pointerValue];
     }
     
     // 获取 target
-    Ivar targetIvar = class_getInstanceVariable([gesture class], "_target");
-    if (targetIvar) {
-        target = *(id *)((char *)gesture + ivar_getOffset(targetIvar));
-    }
+    target = [gesture valueForKey:@"_target"];
     
     if (target && action && [target respondsToSelector:action]) {
         NSLog(@"[TouchPlayer] Calling gesture action: %@ on %@", 

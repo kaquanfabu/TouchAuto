@@ -341,8 +341,16 @@
     // 修复要求2: 转换坐标 - 录制的是屏幕坐标，hitTest 需要 window 坐标
     CGPoint windowPoint = [keyWindow convertPoint:location fromWindow:nil];
     
+    // 修复：在 hitTest 之前，临时禁用 FloatingPanel 的交互，避免误触停止按钮
+    __block BOOL originalInteractionEnabled = NO;
+    [[FloatingPanel sharedInstance] performSelectorOnMainThread:@selector(setUserInteractionEnabled:) withObject:@(NO) waitUntilDone:YES];
+    originalInteractionEnabled = [FloatingPanel sharedInstance].userInteractionEnabled;
+    
     // 使用 hitTest 定位目标视图
     UIView *hitView = [keyWindow hitTest:windowPoint withEvent:nil];
+    
+    // 恢复 FloatingPanel 的交互状态
+    [[FloatingPanel sharedInstance] performSelectorOnMainThread:@selector(setUserInteractionEnabled:) withObject:@(originalInteractionEnabled) waitUntilDone:YES];
     
     // 修复要求3: 增加调试日志
     NSLog(@"[TouchPlayer] 原始坐标:(%.2f, %.2f) 转换后坐标:(%.2f, %.2f)", 

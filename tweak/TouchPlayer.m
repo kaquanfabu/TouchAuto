@@ -406,6 +406,9 @@
 }
 
 - (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type {
+    NSLog(@"[TouchPlayer] triggerActionForView: %@ at (%.2f, %.2f)", 
+          NSStringFromClass(view.class), location.x, location.y);
+    
     // 修复要求4: 优先处理 gesture recognizer
     if ([self triggerGestureRecognizerAction:view atLocation:location]) {
         NSLog(@"[TouchPlayer] Triggered gesture recognizer action");
@@ -448,8 +451,17 @@
         return;
     }
     
-    // 7. 尝试查找父级视图中的可交互控件
+    // 7. 如果是普通 UIView，尝试模拟点击
+    if ([view isKindOfClass:[UIView class]] && 
+        ![view isKindOfClass:[UIControl class]]) {
+        NSLog(@"[TouchPlayer] Trying to simulate touch on plain UIView: %@", 
+              NSStringFromClass(view.class));
+        [self simulateTouchSequenceOnView:view];
+    }
+    
+    // 8. 尝试查找父级视图中的可交互控件
     if (view.superview) {
+        NSLog(@"[TouchPlayer] Moving to superview: %@", NSStringFromClass(view.superview.class));
         [self triggerActionForView:view.superview atLocation:location type:type];
     }
 }
@@ -568,9 +580,68 @@
         return NO;
     }
     
-    // 触发按钮点击
+    NSLog(@"[TouchPlayer] Triggering UIButton: %@ title:%@", 
+          NSStringFromClass(button.class), button.currentTitle);
+    
+    // 方法1: 模拟完整触摸流程
+    [self simulateTouchSequenceOnView:view];
+    
+    // 方法2: 直接调用 sendActionsForControlEvents
+    [button sendActionsForControlEvents:UIControlEventTouchDown];
     [button sendActionsForControlEvents:UIControlEventTouchUpInside];
+    
+    // 方法3: 尝试调用内部方法
+    [self invokeSelector:@selector(_sendActionsForEvents:withEvent:) 
+                onObject:button 
+              withObject:@(UIControlEventTouchUpInside)];
+    
+    // 方法4: 直接调用按钮绑定的 target-action
+    [self triggerTargetActionsForControl:button];
+    
     return YES;
+}
+
+- (void)triggerTargetActionsForControl:(UIControl *)control {
+    // 尝试获取所有绑定的 actions
+    SEL allTargetsSel = NSSelectorFromString(@"allTargets");
+    if ([control respondsToSelector:allTargetsSel]) {
+        NSSet *targets = nil;
+        NSMethodSignature *signature = [control methodSignatureForSelector:allTargetsSel];
+        if (signature) {
+            NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+            [invocation setSelector:allTargetsSel];
+            [invocation setTarget:control];
+            [invocation invoke];
+            [invocation getReturnValue:&targets];
+        }
+        
+        for (id target in targets) {
+            SEL actionsForTargetSel = NSSelectorFromString(@"actionsForTarget:forControlEvent:");
+            if ([control respondsToSelector:actionsForTargetSel]) {
+                NSArray *actions = nil;
+                signature = [control methodSignatureForSelector:actionsForTargetSel];
+                if (signature) {
+                    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+                    [invocation setSelector:actionsForTargetSel];
+                    [invocation setTarget:control];
+                    [invocation setArgument:&target atIndex:2];
+                    NSNumber *eventNum = @(UIControlEventTouchUpInside);
+                    [invocation setArgument:&eventNum atIndex:3];
+                    [invocation invoke];
+                    [invocation getReturnValue:&actions];
+                }
+                
+                for (NSString *actionName in actions) {
+                    SEL action = NSSelectorFromString(actionName);
+                    if ([target respondsToSelector:action]) {
+                        NSLog(@"[TouchPlayer] Calling target action: %@ on %@", 
+                              NSStringFromSelector(action), NSStringFromClass(target.class));
+                        [self invokeSelector:action onObject:target withObject:control];
+                    }
+                }
+            }
+        }
+    }
 }
 
 - (BOOL)triggerUIControlAction:(UIView *)view {
@@ -584,10 +655,44 @@
         return NO;
     }
     
+    NSLog(@"[TouchPlayer] Triggering UIControl: %@", NSStringFromClass(control.class));
+    
+    // 模拟完整触摸流程
+    [self simulateTouchSequenceOnView:view];
+    
     // 触发所有触摸事件
+    [control sendActionsForControlEvents:UIControlEventTouchDown];
     [control sendActionsForControlEvents:UIControlEventTouchUpInside];
     [control sendActionsForControlEvents:UIControlEventValueChanged];
+    
+    // 尝试调用内部方法
+    [self invokeSelector:@selector(_sendActionsForEvents:withEvent:) 
+                onObject:control 
+              withObject:@(UIControlEventTouchUpInside)];
+    
     return YES;
+}
+
+- (void)simulateTouchSequenceOnView:(UIView *)view {
+    // 获取视图中心作为触摸点
+    CGPoint center = CGPointMake(view.bounds.size.width / 2, view.bounds.size.height / 2);
+    CGPoint windowPoint = [view convertPoint:center toView:nil];
+    
+    // 模拟 touchesBegan
+    UITouch *touch = [self createSimulatedTouchAtLocation:windowPoint inView:view];
+    if (touch) {
+        NSSet *touches = [NSSet setWithObject:touch];
+        UIEvent *event = [self createSimulatedEventWithTouches:touches];
+        
+        [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseBegan)];
+        [view touchesBegan:touches withEvent:event];
+        
+        // 短暂延迟模拟触摸持续
+        [NSThread sleepForTimeInterval:0.05];
+        
+        [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseEnded)];
+        [view touchesEnded:touches withEvent:event];
+    }
 }
 
 - (BOOL)triggerUITableViewAction:(UIView *)view atLocation:(CGPoint)location {

@@ -338,22 +338,22 @@
         return;
     }
     
-    // 修复要求2: 转换坐标 - 录制的是屏幕坐标，hitTest 需要 window 坐标
+    // 修复要求 2: 转换坐标 - 录制的是屏幕坐标，hitTest 需要 window 坐标
     CGPoint windowPoint = [keyWindow convertPoint:location fromWindow:nil];
+    
+    // 修复要求 3: 增加调试日志
+    NSLog(@"[TouchPlayer] 原始坐标:(%.2f, %.2f) 转换后坐标:(%.2f, %.2f)", 
+          location.x, location.y, windowPoint.x, windowPoint.y);
     
     // 使用 hitTest 定位目标视图
     UIView *hitView = [keyWindow hitTest:windowPoint withEvent:nil];
-    
-    // 修复要求3: 增加调试日志
-    NSLog(@"[TouchPlayer] 原始坐标:(%.2f, %.2f) 转换后坐标:(%.2f, %.2f)", 
-          location.x, location.y, windowPoint.x, windowPoint.y);
     
     if (!hitView) {
         NSLog(@"[TouchPlayer] No view found at location (%f, %f)", windowPoint.x, windowPoint.y);
         return;
     }
     
-    // 修复要求3: 打印命中视图信息和父视图链
+    // 修复要求 3: 打印命中视图信息和父视图链
     NSLog(@"[TouchPlayer] Hit view: %@ frame:%@", 
           NSStringFromClass(hitView.class), NSStringFromCGRect(hitView.frame));
     
@@ -369,11 +369,22 @@
     }
     NSLog(@"[TouchPlayer] Superview chain: %@", superChain);
     
-    // 修复要求5: 如果 hitView 不可交互，递归向上查找父级
-    UIView *targetView = [self findInteractiveSuperview:hitView];
-    if (targetView != hitView) {
-        NSLog(@"[TouchPlayer] Found interactive superview: %@ frame:%@", 
-              NSStringFromClass(targetView.class), NSStringFromCGRect(targetView.frame));
+    // 修复：优先使用 hitView（最上层的视图），而不是向上查找父级
+    // 只有当 hitView 完全不可交互且没有 gesture 时，才向上查找
+    UIView *targetView = hitView;
+    
+    // 检查 hitView 是否有 gesture（即使 userInteractionEnabled = NO）
+    if (hitView.gestureRecognizers && hitView.gestureRecognizers.count > 0) {
+        // hitView 有 gesture，直接使用它
+        targetView = hitView;
+        NSLog(@"[TouchPlayer] Using hitView with gestures: %@", NSStringFromClass(hitView.class));
+    } else if (!hitView.userInteractionEnabled || hitView.hidden) {
+        // hitView 不可交互，向上查找父级
+        targetView = [self findInteractiveSuperview:hitView];
+        if (targetView != hitView) {
+            NSLog(@"[TouchPlayer] Found interactive superview: %@ frame:%@", 
+                  NSStringFromClass(targetView.class), NSStringFromCGRect(targetView.frame));
+        }
     }
     
     // 根据视图类型触发相应行为
@@ -466,24 +477,6 @@
     
     NSLog(@"[TouchPlayer] triggerActionForView: %@ at (%.2f, %.2f)", 
           NSStringFromClass(view.class), location.x, location.y);
-    
-    // 如果是 UICollectionViewCell，优先触发 CollectionView 事件
-    if ([view isKindOfClass:[UICollectionViewCell class]]) {
-        NSLog(@"[TouchPlayer] Found UICollectionViewCell, trying to trigger collection view action");
-        if ([self triggerUICollectionViewAction:view atLocation:location]) {
-            NSLog(@"[TouchPlayer] Triggered UICollectionView action for cell");
-            return;
-        }
-    }
-    
-    // 如果是 UITableViewCell，优先触发 TableView 事件
-    if ([view isKindOfClass:[UITableViewCell class]]) {
-        NSLog(@"[TouchPlayer] Found UITableViewCell, trying to trigger table view action");
-        if ([self triggerUITableViewAction:view atLocation:location]) {
-            NSLog(@"[TouchPlayer] Triggered UITableView action for cell");
-            return;
-        }
-    }
     
     // 修复要求4: 优先处理 gesture recognizer
     if ([self triggerGestureRecognizerAction:view atLocation:location]) {
@@ -597,106 +590,10 @@
         return;
     }
     
-    // 对于 UILongPressGestureRecognizer，需要模拟长按效果
-    if ([gesture isKindOfClass:[UILongPressGestureRecognizer class]]) {
-        UILongPressGestureRecognizer *longPressGesture = (UILongPressGestureRecognizer *)gesture;
-        [self simulateLongPressGesture:longPressGesture onView:view atLocation:location];
-        return;
-    }
-    
     // 对于其他 gesture，尝试触发其 action
     [self triggerGestureTargetActions:gesture];
     
     NSLog(@"[TouchPlayer] Simulated gesture: %@", NSStringFromClass(gesture.class));
-}
-
-- (void)simulateLongPressGesture:(UILongPressGestureRecognizer *)gesture onView:(UIView *)view atLocation:(CGPoint)location {
-    UIView *gestureView = gesture.view;
-    if (!gestureView) return;
-    
-    // 获取长按需要的最小时间（默认0.5秒）
-    NSTimeInterval pressDuration = gesture.minimumPressDuration;
-    if (pressDuration <= 0) {
-        pressDuration = 0.5;
-    }
-    
-    NSLog(@"[TouchPlayer] Simulating long press with duration: %.2fs", pressDuration);
-    
-    // 创建模拟触摸事件
-    UITouch *touch = [[UITouch alloc] init];
-    UIEvent *event = [[UIEvent alloc] init];
-    
-    // 使用 NSValue 包装触摸点
-    CGPoint center = CGPointMake(view.bounds.size.width / 2, view.bounds.size.height / 2);
-    NSValue *touchPoint = [NSValue valueWithCGPoint:[view convertPoint:center toView:nil]];
-    
-    @try {
-        // 设置触摸属性
-        SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
-        if ([touch respondsToSelector:setLocationSel]) {
-            NSMethodSignature *signature = [touch methodSignatureForSelector:setLocationSel];
-            if (signature) {
-                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-                [invocation setSelector:setLocationSel];
-                [invocation setTarget:touch];
-                [invocation setArgument:&touchPoint atIndex:2];
-                [invocation invoke];
-            }
-        }
-        
-        SEL setViewSel = NSSelectorFromString(@"_setView:");
-        if ([touch respondsToSelector:setViewSel]) {
-            NSMethodSignature *signature = [touch methodSignatureForSelector:setViewSel];
-            if (signature) {
-                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-                [invocation setSelector:setViewSel];
-                [invocation setTarget:touch];
-                [invocation setArgument:&view atIndex:2];
-                [invocation invoke];
-            }
-        }
-        
-        NSNumber *phaseBegan = @(UITouchPhaseBegan);
-        SEL setPhaseSel = NSSelectorFromString(@"_setPhase:");
-        if ([touch respondsToSelector:setPhaseSel]) {
-            NSMethodSignature *signature = [touch methodSignatureForSelector:setPhaseSel];
-            if (signature) {
-                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-                [invocation setSelector:setPhaseSel];
-                [invocation setTarget:touch];
-                [invocation setArgument:&phaseBegan atIndex:2];
-                [invocation invoke];
-            }
-        }
-        
-        NSSet *touches = [NSSet setWithObject:touch];
-        
-        // 发送 touchesBegan
-        [gesture touchesBegan:touches withEvent:event];
-        
-        // 模拟长按保持时间
-        [NSThread sleepForTimeInterval:pressDuration];
-        
-        // 发送 touchesEnded
-        NSNumber *phaseEnded = @(UITouchPhaseEnded);
-        if ([touch respondsToSelector:setPhaseSel]) {
-            NSMethodSignature *signature = [touch methodSignatureForSelector:setPhaseSel];
-            if (signature) {
-                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-                [invocation setSelector:setPhaseSel];
-                [invocation setTarget:touch];
-                [invocation setArgument:&phaseEnded atIndex:2];
-                [invocation invoke];
-            }
-        }
-        
-        [gesture touchesEnded:touches withEvent:event];
-        
-        NSLog(@"[TouchPlayer] Successfully triggered long press gesture");
-    }
-    @catch (NSException *exception) {
-        NSLog(@"[TouchPlayer] Failed to trigger long press gesture: %@", exception.description);
-    }
 }
 
 - (void)triggerGestureTargetActions:(UIGestureRecognizer *)gesture {

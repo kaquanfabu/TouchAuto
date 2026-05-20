@@ -79,13 +79,8 @@
     }
     
     // 播放时禁用 FloatingPanel 交互，防止拦截触摸事件
-    Class FloatingPanelClass = NSClassFromString(@"FloatingPanel");
-    if (FloatingPanelClass) {
-        id panel = [FloatingPanelClass performSelector:NSSelectorFromString(@"sharedInstance")];
-        if (panel && [panel respondsToSelector:NSSelectorFromString(@"setUserInteractionEnabled:")]) {
-            [panel performSelector:NSSelectorFromString(@"setUserInteractionEnabled:") withObject:@(NO)];
-        }
-    }
+    [self setPanelUserInteractionEnabled:NO];
+}
     
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
@@ -210,13 +205,40 @@
 }
 
 - (void)enablePanelInteraction {
+    [self setPanelUserInteractionEnabled:YES];
+}
+
+- (void)setPanelUserInteractionEnabled:(BOOL)enabled {
     Class FloatingPanelClass = NSClassFromString(@"FloatingPanel");
-    if (FloatingPanelClass) {
-        id panel = [FloatingPanelClass performSelector:NSSelectorFromString(@"sharedInstance")];
-        if (panel && [panel respondsToSelector:NSSelectorFromString(@"setUserInteractionEnabled:")]) {
-            [panel performSelector:NSSelectorFromString(@"setUserInteractionEnabled:") withObject:@(YES)];
-        }
-    }
+    if (!FloatingPanelClass) return;
+    
+    // 获取 sharedInstance
+    SEL sharedInstanceSel = NSSelectorFromString(@"sharedInstance");
+    NSMethodSignature *signature = [FloatingPanelClass methodSignatureForSelector:sharedInstanceSel];
+    if (!signature) return;
+    
+    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+    [invocation setSelector:sharedInstanceSel];
+    [invocation setTarget:FloatingPanelClass];
+    [invocation invoke];
+    
+    __unsafe_unretained id panel = nil;
+    [invocation getReturnValue:&panel];
+    if (!panel) return;
+    
+    // 设置 userInteractionEnabled
+    SEL setUserInteractionEnabledSel = NSSelectorFromString(@"setUserInteractionEnabled:");
+    if (![panel respondsToSelector:setUserInteractionEnabledSel]) return;
+    
+    signature = [panel methodSignatureForSelector:setUserInteractionEnabledSel];
+    if (!signature) return;
+    
+    invocation = [NSInvocation invocationWithMethodSignature:signature];
+    [invocation setSelector:setUserInteractionEnabledSel];
+    [invocation setTarget:panel];
+    NSNumber *enabledNum = @(enabled);
+    [invocation setArgument:&enabledNum atIndex:2];
+    [invocation invoke];
 }
 
 - (void)executeNextEvent {

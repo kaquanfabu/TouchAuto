@@ -11,6 +11,7 @@ TouchAuto_FRAMEWORKS = UIKit CoreGraphics CoreText ImageIO QuartzCore Foundation
 TouchAuto_FILES = tweak/TouchAuto.m \
                   tweak/TouchRecorder.m \
                   tweak/TouchPlayer.m \
+                  tweak/TouchInjectManager.m \
                   tweak/FloatingPanel.m \
                   tweak/TouchEvent.m \
                   tweak/AdvancedFeatures.m

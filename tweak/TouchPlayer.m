@@ -341,16 +341,8 @@
     // 修复要求2: 转换坐标 - 录制的是屏幕坐标，hitTest 需要 window 坐标
     CGPoint windowPoint = [keyWindow convertPoint:location fromWindow:nil];
     
-    // 修复：在 hitTest 之前，临时禁用 FloatingPanel 的交互，避免误触停止按钮
-    __block BOOL originalInteractionEnabled = NO;
-    [[FloatingPanel sharedInstance] performSelectorOnMainThread:@selector(setUserInteractionEnabled:) withObject:@(NO) waitUntilDone:YES];
-    originalInteractionEnabled = [FloatingPanel sharedInstance].userInteractionEnabled;
-    
     // 使用 hitTest 定位目标视图
     UIView *hitView = [keyWindow hitTest:windowPoint withEvent:nil];
-    
-    // 恢复 FloatingPanel 的交互状态
-    [[FloatingPanel sharedInstance] performSelectorOnMainThread:@selector(setUserInteractionEnabled:) withObject:@(originalInteractionEnabled) waitUntilDone:YES];
     
     // 修复要求3: 增加调试日志
     NSLog(@"[TouchPlayer] 原始坐标:(%.2f, %.2f) 转换后坐标:(%.2f, %.2f)", 
@@ -486,10 +478,6 @@
 }
 
 - (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type {
-    [self triggerActionForView:view atLocation:location type:type recursionDepth:0];
-}
-
-- (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type recursionDepth:(NSUInteger)depth {
     if (!view) return;
     
     NSLog(@"[TouchPlayer] triggerActionForView: %@ at (%.2f, %.2f)", 
@@ -501,7 +489,7 @@
         ![interactiveSubview isKindOfClass:[UICollectionView class]]) {
         NSLog(@"[TouchPlayer] Found interactive subview: %@", NSStringFromClass(interactiveSubview.class));
         // 递归调用处理子视图
-        [self triggerActionForView:interactiveSubview atLocation:location type:type recursionDepth:depth];
+        [self triggerActionForView:interactiveSubview atLocation:location type:type];
         return;
     }
     
@@ -558,10 +546,13 @@
     }
     
     // 8. 尝试查找父级视图中的可交互控件（最多递归3层）
-    if (view.superview && depth < 3) {
+    static NSUInteger recursionDepth = 0;
+    if (view.superview && recursionDepth < 3) {
+        recursionDepth++;
         NSLog(@"[TouchPlayer] Moving to superview: %@ (depth: %lu)", 
-              NSStringFromClass(view.superview.class), (unsigned long)(depth + 1));
-        [self triggerActionForView:view.superview atLocation:location type:type recursionDepth:(depth + 1)];
+              NSStringFromClass(view.superview.class), (unsigned long)recursionDepth);
+        [self triggerActionForView:view.superview atLocation:location type:type];
+        recursionDepth--;
     }
 }
 

@@ -333,15 +333,13 @@
 }
 
 - (void)triggerTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
-    static int touchId = 1;
-    int currentTouchId = touchId++;
-    if (touchId > 100) touchId = 1;
+    NSInteger touchId = [PTFakeTouch getAvailablePointId];
 
     if (type != TouchEventTypeEnded) {
-        [PTFakeTouch activeTouchWithId:currentTouchId atPoint:location];
+        [PTFakeTouch fakeTouchId:touchId AtPoint:location withTouchPhase:UITouchPhaseBegan];
     } else {
-        [PTFakeTouch activeTouchWithId:currentTouchId atPoint:location];
-        [PTFakeTouch endTouchWithId:currentTouchId atPoint:location];
+        [PTFakeTouch fakeTouchId:touchId AtPoint:location withTouchPhase:UITouchPhaseBegan];
+        [PTFakeTouch fakeTouchId:touchId AtPoint:location withTouchPhase:UITouchPhaseEnded];
     }
 }
 

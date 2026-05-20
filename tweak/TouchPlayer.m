@@ -359,24 +359,24 @@
         }
         
         // 获取之前的位置用于 previousLocationInWindow
-        CGPoint previousLocation = [cachedTouch locationInWindow];
+        CGPoint previousLocation = [cachedTouch locationInView:nil];
         
         // 使用 KVC 设置属性
         [cachedTouch setValue:@(phase) forKey:@"phase"];
-        [cachedTouch setValue:[NSValue valueWithCGPoint:location] forKey:@"locationInWindow"];
-        [cachedTouch setValue:[NSValue valueWithCGPoint:previousLocation] forKey:@"previousLocationInWindow"];
-        [cachedTouch setValue:@([[NSDate date] timeIntervalSince1970]) forKey:@"timestamp"];
-        [cachedTouch setValue:keyWindow forKey:@"window"];
+        [cachedTouch setValue:[NSValue valueWithCGPoint:location] forKey:@"_locationInWindow"];
+        [cachedTouch setValue:[NSValue valueWithCGPoint:previousLocation] forKey:@"_previousLocationInWindow"];
+        [cachedTouch setValue:@([[NSDate date] timeIntervalSince1970]) forKey:@"_timestamp"];
+        [cachedTouch setValue:keyWindow forKey:@"_window"];
         
         // 更新事件中的触摸集合
         NSMutableSet *touchesSet = [NSMutableSet setWithObject:cachedTouch];
         
         // 使用 KVC 更新事件的 touches
-        [cachedEvent setValue:touchesSet forKey:@"touches"];
-        [cachedEvent setValue:keyWindow forKey:@"window"];
-        [cachedEvent setValue:@([[NSDate date] timeIntervalSince1970]) forKey:@"timestamp"];
+        [cachedEvent setValue:touchesSet forKey:@"_touches"];
+        [cachedEvent setValue:keyWindow forKey:@"_window"];
+        [cachedEvent setValue:@([[NSDate date] timeIntervalSince1970]) forKey:@"_timestamp"];
         
-        NSLog(@"[TouchPlayer] 重放触摸事件: phase=%d, location=(%.1f, %.1f)", phase, location.x, location.y);
+        NSLog(@"[TouchPlayer] 重放触摸事件: phase=%ld, location=(%.1f, %.1f)", (long)phase, location.x, location.y);
         
         // 发送事件
         [[UIApplication sharedApplication] sendEvent:cachedEvent];

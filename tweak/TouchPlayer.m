@@ -399,7 +399,17 @@
 }
 
 - (BOOL)isInteractiveView:(UIView *)view {
-    if (!view || view.hidden || !view.userInteractionEnabled) {
+    if (!view || view.hidden) {
+        return NO;
+    }
+    
+    // 先检查是否有 gesture recognizers（即使 userInteractionEnabled = NO，有 gesture 的视图也应该被视为可交互）
+    if (view.gestureRecognizers && view.gestureRecognizers.count > 0) {
+        return YES;
+    }
+    
+    // 检查 userInteractionEnabled
+    if (!view.userInteractionEnabled) {
         return NO;
     }
     
@@ -410,11 +420,6 @@
     if ([view isKindOfClass:[UICollectionViewCell class]]) return YES;
     if ([view isKindOfClass:[UIScrollView class]]) return YES;
     if ([view isKindOfClass:[WKWebView class]]) return YES;
-    
-    // 检查是否有 gesture recognizers
-    if (view.gestureRecognizers && view.gestureRecognizers.count > 0) {
-        return YES;
-    }
     
     return NO;
 }
@@ -520,21 +525,42 @@
 }
 
 - (void)simulateGestureRecognizer:(UIGestureRecognizer *)gesture onView:(UIView *)view atLocation:(CGPoint)location {
-    // 使用私有 API 触发 gesture recognizer
-    // 方法1: 直接设置状态
-    [self invokeSelector:@selector(_setRecognized:) onObject:gesture withObject:@(YES)];
-    
-    // 方法2: 模拟 touchesBegan/touchesEnded
-    UITouch *touch = [self createSimulatedTouchAtLocation:location inView:view];
-    if (touch) {
-        NSSet *touches = [NSSet setWithObject:touch];
-        UIEvent *event = [self createSimulatedEventWithTouches:touches];
-        
-        [gesture touchesBegan:touches withEvent:event];
-        [gesture touchesEnded:touches withEvent:event];
+    // 对于 UITapGestureRecognizer，直接触发其 action
+    if ([gesture isKindOfClass:[UITapGestureRecognizer class]]) {
+        if (gesture.numberOfTapsRequired <= 1) {
+            [self triggerGestureTargetActions:gesture];
+        }
+        return;
     }
     
+    // 对于其他 gesture，尝试触发其 action
+    [self triggerGestureTargetActions:gesture];
+    
     NSLog(@"[TouchPlayer] Simulated gesture: %@", NSStringFromClass(gesture.class));
+}
+
+- (void)triggerGestureTargetActions:(UIGestureRecognizer *)gesture {
+    // 获取 gesture 的 target 和 action
+    SEL action = gesture.action;
+    id target = gesture.target;
+    
+    if (target && action && [target respondsToSelector:action]) {
+        NSLog(@"[TouchPlayer] Calling gesture action: %@ on %@", 
+              NSStringFromSelector(action), NSStringFromClass([target class]));
+        
+        // 检查 action 的参数数量
+        NSMethodSignature *signature = [target methodSignatureForSelector:action];
+        if (signature) {
+            NSUInteger paramCount = signature.numberOfArguments;
+            if (paramCount == 2) {
+                // 无参数: - (void)handler;
+                [target performSelector:action];
+            } else if (paramCount == 3) {
+                // 一个参数: - (void)handler:(UIGestureRecognizer *)gesture;
+                [target performSelector:action withObject:gesture];
+            }
+        }
+    }
 }
 
 - (void)invokeSelector:(SEL)selector onObject:(id)object withObject:(id)argument {
@@ -550,37 +576,6 @@
         [invocation setArgument:&argument atIndex:2];
     }
     [invocation invoke];
-}
-
-- (UITouch *)createSimulatedTouchAtLocation:(CGPoint)location inView:(UIView *)view {
-    Class UITouchClass = NSClassFromString(@"UITouch");
-    if (!UITouchClass) return nil;
-    
-    UITouch *touch = [[UITouchClass alloc] init];
-    
-    // 使用 runtime 设置属性
-    SEL setLocationInWindowSel = NSSelectorFromString(@"_setLocationInWindow:");
-    [self invokeSelector:setLocationInWindowSel onObject:touch withObject:[NSValue valueWithCGPoint:location]];
-    
-    SEL setViewSel = NSSelectorFromString(@"_setView:");
-    [self invokeSelector:setViewSel onObject:touch withObject:view];
-    
-    SEL setPhaseSel = NSSelectorFromString(@"_setPhase:");
-    [self invokeSelector:setPhaseSel onObject:touch withObject:@(UITouchPhaseBegan)];
-    
-    return touch;
-}
-
-- (UIEvent *)createSimulatedEventWithTouches:(NSSet *)touches {
-    Class UIEventClass = NSClassFromString(@"UIEvent");
-    if (!UIEventClass) return nil;
-    
-    UIEvent *event = [[UIEventClass alloc] init];
-    
-    SEL setTouchesSel = NSSelectorFromString(@"_setTouches:");
-    [self invokeSelector:setTouchesSel onObject:event withObject:touches];
-    
-    return event;
 }
 
 - (BOOL)triggerUIButtonAction:(UIView *)view {
@@ -604,14 +599,6 @@
     [button sendActionsForControlEvents:UIControlEventTouchDown];
     [button sendActionsForControlEvents:UIControlEventTouchUpInside];
     
-    // 方法3: 尝试调用内部方法
-    [self invokeSelector:@selector(_sendActionsForEvents:withEvent:) 
-                onObject:button 
-              withObject:@(UIControlEventTouchUpInside)];
-    
-    // 方法4: 直接调用按钮绑定的 target-action
-    [self triggerTargetActionsForControl:button];
-    
     return YES;
 }
 
@@ -629,8 +616,10 @@
             [invocation getReturnValue:&targets];
         }
         
-        for (__strong id targetObj in targets) {
-            id __unsafe_unretained target = targetObj;
+        for (id __weak weakTarget in targets) {
+            id target = weakTarget;
+            if (!target) continue;
+            
             SEL actionsForTargetSel = NSSelectorFromString(@"actionsForTarget:forControlEvent:");
             if ([control respondsToSelector:actionsForTargetSel]) {
                 NSArray *actions = nil;
@@ -639,8 +628,7 @@
                     NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
                     [invocation setSelector:actionsForTargetSel];
                     [invocation setTarget:control];
-                    void *targetPtr = (__bridge void *)target;
-                    [invocation setArgument:&targetPtr atIndex:2];
+                    [invocation setArgument:&target atIndex:2];
                     NSNumber *eventNum = @(UIControlEventTouchUpInside);
                     [invocation setArgument:&eventNum atIndex:3];
                     [invocation invoke];
@@ -652,7 +640,8 @@
                     if ([target respondsToSelector:action]) {
                         NSLog(@"[TouchPlayer] Calling target action: %@ on %@", 
                               NSStringFromSelector(action), NSStringFromClass([target class]));
-                        [self invokeSelector:action onObject:target withObject:control];
+                        // 使用 performSelector 更安全
+                        [target performSelector:action withObject:control];
                     }
                 }
             }
@@ -681,33 +670,20 @@
     [control sendActionsForControlEvents:UIControlEventTouchUpInside];
     [control sendActionsForControlEvents:UIControlEventValueChanged];
     
-    // 尝试调用内部方法
-    [self invokeSelector:@selector(_sendActionsForEvents:withEvent:) 
-                onObject:control 
-              withObject:@(UIControlEventTouchUpInside)];
-    
     return YES;
 }
 
 - (void)simulateTouchSequenceOnView:(UIView *)view {
-    // 获取视图中心作为触摸点
-    CGPoint center = CGPointMake(view.bounds.size.width / 2, view.bounds.size.height / 2);
-    CGPoint windowPoint = [view convertPoint:center toView:nil];
+    // 对于 UIControl，不需要模拟完整触摸序列，sendActionsForControlEvents 已经足够
+    if ([view isKindOfClass:[UIControl class]]) {
+        return;
+    }
     
-    // 模拟 touchesBegan
-    UITouch *touch = [self createSimulatedTouchAtLocation:windowPoint inView:view];
-    if (touch) {
-        NSSet *touches = [NSSet setWithObject:touch];
-        UIEvent *event = [self createSimulatedEventWithTouches:touches];
-        
-        [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseBegan)];
-        [view touchesBegan:touches withEvent:event];
-        
-        // 短暂延迟模拟触摸持续
-        [NSThread sleepForTimeInterval:0.05];
-        
-        [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseEnded)];
-        [view touchesEnded:touches withEvent:event];
+    // 对于普通 UIView，尝试查找并触发 gesture recognizers
+    if (view.gestureRecognizers && view.gestureRecognizers.count > 0) {
+        CGPoint center = CGPointMake(view.bounds.size.width / 2, view.bounds.size.height / 2);
+        CGPoint windowPoint = [view convertPoint:center toView:nil];
+        [self triggerGestureRecognizerAction:view atLocation:windowPoint];
     }
 }
 

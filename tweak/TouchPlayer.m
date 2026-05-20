@@ -527,8 +527,9 @@
 - (void)simulateGestureRecognizer:(UIGestureRecognizer *)gesture onView:(UIView *)view atLocation:(CGPoint)location {
     // 对于 UITapGestureRecognizer，直接触发其 action
     if ([gesture isKindOfClass:[UITapGestureRecognizer class]]) {
-        if (gesture.numberOfTapsRequired <= 1) {
-            [self triggerGestureTargetActions:gesture];
+        UITapGestureRecognizer *tapGesture = (UITapGestureRecognizer *)gesture;
+        if (tapGesture.numberOfTapsRequired <= 1) {
+            [self triggerGestureTargetActions:tapGesture];
         }
         return;
     }
@@ -540,25 +541,38 @@
 }
 
 - (void)triggerGestureTargetActions:(UIGestureRecognizer *)gesture {
-    // 获取 gesture 的 target 和 action
-    SEL action = gesture.action;
-    id target = gesture.target;
+    // 使用 runtime 获取 gesture 的 target 和 action
+    SEL action = NULL;
+    id target = nil;
+    
+    // 获取 action
+    Ivar actionIvar = class_getInstanceVariable([gesture class], "_action");
+    if (actionIvar) {
+        action = *(SEL *)((char *)gesture + ivar_getOffset(actionIvar));
+    }
+    
+    // 获取 target
+    Ivar targetIvar = class_getInstanceVariable([gesture class], "_target");
+    if (targetIvar) {
+        target = *(id *)((char *)gesture + ivar_getOffset(targetIvar));
+    }
     
     if (target && action && [target respondsToSelector:action]) {
         NSLog(@"[TouchPlayer] Calling gesture action: %@ on %@", 
               NSStringFromSelector(action), NSStringFromClass([target class]));
         
-        // 检查 action 的参数数量
+        // 使用 NSInvocation 避免 performSelector 警告
         NSMethodSignature *signature = [target methodSignatureForSelector:action];
         if (signature) {
+            NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+            [invocation setSelector:action];
+            [invocation setTarget:target];
             NSUInteger paramCount = signature.numberOfArguments;
-            if (paramCount == 2) {
-                // 无参数: - (void)handler;
-                [target performSelector:action];
-            } else if (paramCount == 3) {
+            if (paramCount >= 3) {
                 // 一个参数: - (void)handler:(UIGestureRecognizer *)gesture;
-                [target performSelector:action withObject:gesture];
+                [invocation setArgument:&gesture atIndex:2];
             }
+            [invocation invoke];
         }
     }
 }
@@ -640,8 +654,18 @@
                     if ([target respondsToSelector:action]) {
                         NSLog(@"[TouchPlayer] Calling target action: %@ on %@", 
                               NSStringFromSelector(action), NSStringFromClass([target class]));
-                        // 使用 performSelector 更安全
-                        [target performSelector:action withObject:control];
+                        // 使用 NSInvocation 避免 performSelector 警告
+                        NSMethodSignature *actionSignature = [target methodSignatureForSelector:action];
+                        if (actionSignature) {
+                            NSInvocation *actionInvocation = [NSInvocation invocationWithMethodSignature:actionSignature];
+                            [actionInvocation setSelector:action];
+                            [actionInvocation setTarget:target];
+                            NSUInteger paramCount = actionSignature.numberOfArguments;
+                            if (paramCount >= 3) {
+                                [actionInvocation setArgument:&control atIndex:2];
+                            }
+                            [actionInvocation invoke];
+                        }
                     }
                 }
             }

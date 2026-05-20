@@ -386,17 +386,53 @@
         return view;
     }
     
+    // 向下查找子视图中带有 gesture 的视图
+    UIView *foundView = [self findInteractiveSubview:view];
+    if (foundView) {
+        return foundView;
+    }
+    
     // 向上查找父级
     UIView *superview = view.superview;
     while (superview) {
         if ([self isInteractiveView:superview]) {
             return superview;
         }
+        // 同时检查父级的子视图
+        foundView = [self findInteractiveSubview:superview];
+        if (foundView) {
+            return foundView;
+        }
         superview = superview.superview;
     }
     
     // 找不到可交互的父级，返回原始视图
     return view;
+}
+
+- (UIView *)findInteractiveSubview:(UIView *)view {
+    // 遍历所有子视图，查找带有 gesture 的视图
+    for (UIView *subview in view.subviews) {
+        // 检查子视图是否有 gesture（即使 userInteractionEnabled = NO）
+        if (subview.gestureRecognizers && subview.gestureRecognizers.count > 0) {
+            // 检查是否有可用的 tap gesture
+            for (UIGestureRecognizer *gesture in subview.gestureRecognizers) {
+                if (gesture.enabled && [gesture isKindOfClass:[UITapGestureRecognizer class]]) {
+                    return subview;
+                }
+            }
+            // 如果有任何 gesture，返回这个视图
+            return subview;
+        }
+        
+        // 递归查找子视图
+        UIView *foundView = [self findInteractiveSubview:subview];
+        if (foundView) {
+            return foundView;
+        }
+    }
+    
+    return nil;
 }
 
 - (BOOL)isInteractiveView:(UIView *)view {

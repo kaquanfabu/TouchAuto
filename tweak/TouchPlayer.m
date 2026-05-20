@@ -2,7 +2,13 @@
 #import "FloatingPanel.h"
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
+#import <mach/mach_time.h>
 #import <IOKit/hid/IOHIDEvent.h>
+
+@interface UIEvent (Private)
+- (void)_setHIDEvent:(IOHIDEventRef)event;
+@end
 
 @interface TouchPlayer ()
 
@@ -369,7 +375,10 @@
     IOHIDEventAppendEvent(parent, child);
 
     UIEvent *event = [[NSClassFromString(@"UITouchesEvent") alloc] init];
-    [event _setHIDEvent:parent];
+    SEL hidSel = NSSelectorFromString(@"_setHIDEvent:");
+if ([event respondsToSelector:hidSel]) {
+    ((void (*)(id, SEL, IOHIDEventRef))objc_msgSend)(event, hidSel, parent);
+}
 
     [[UIApplication sharedApplication] sendEvent:event];
 

@@ -81,7 +81,7 @@
     }
     
     // 播放时禁用 FloatingPanel 交互，防止拦截触摸事件
-    [[FloatingPanel sharedInstance] setUserInteractionEnabled:NO];
+[FloatingPanel sharedInstance].userInteractionEnabled = NO;
     
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
@@ -426,6 +426,8 @@
 }
 
 - (void)triggerActionForView:(UIView *)view atLocation:(CGPoint)location type:(TouchEventType)type {
+    if (!view) return;
+    
     NSLog(@"[TouchPlayer] triggerActionForView: %@ at (%.2f, %.2f)", 
           NSStringFromClass(view.class), location.x, location.y);
     
@@ -477,12 +479,18 @@
         NSLog(@"[TouchPlayer] Trying to simulate touch on plain UIView: %@", 
               NSStringFromClass(view.class));
         [self simulateTouchSequenceOnView:view];
+        // 添加 return 防止继续递归
+        return;
     }
     
-    // 8. 尝试查找父级视图中的可交互控件
-    if (view.superview) {
-        NSLog(@"[TouchPlayer] Moving to superview: %@", NSStringFromClass(view.superview.class));
+    // 8. 尝试查找父级视图中的可交互控件（最多递归3层）
+    static NSUInteger recursionDepth = 0;
+    if (view.superview && recursionDepth < 3) {
+        recursionDepth++;
+        NSLog(@"[TouchPlayer] Moving to superview: %@ (depth: %lu)", 
+              NSStringFromClass(view.superview.class), (unsigned long)recursionDepth);
         [self triggerActionForView:view.superview atLocation:location type:type];
+        recursionDepth--;
     }
 }
 
@@ -542,36 +550,40 @@
 }
 
 - (void)triggerGestureTargetActions:(UIGestureRecognizer *)gesture {
-    // 使用 KVC 获取 gesture 的 target 和 action
-    SEL action = NULL;
-    id target = nil;
+    // 安全地触发 gesture recognizer
+    // 使用 touchesBegan/touchesEnded 模拟触摸事件
+    UIView *view = gesture.view;
+    if (!view) return;
     
-    // 获取 action
-    NSValue *actionValue = [gesture valueForKey:@"_action"];
-    if (actionValue) {
-        action = [actionValue pointerValue];
-    }
+    // 获取 gesture 在 view 中的位置（使用中心点）
+    CGPoint center = CGPointMake(view.bounds.size.width / 2, view.bounds.size.height / 2);
     
-    // 获取 target
-    target = [gesture valueForKey:@"_target"];
+    // 创建模拟触摸事件
+    UITouch *touch = [[UITouch alloc] init];
+    UIEvent *event = [[UIEvent alloc] init];
     
-    if (target && action && [target respondsToSelector:action]) {
-        NSLog(@"[TouchPlayer] Calling gesture action: %@ on %@", 
-              NSStringFromSelector(action), NSStringFromClass([target class]));
+    // 使用 NSValue 包装触摸点
+    NSValue *touchPoint = [NSValue valueWithCGPoint:center];
+    
+    // 使用 performSelector 来调用私有方法（更安全）
+    @try {
+        [touch performSelector:NSSelectorFromString(@"_setLocationInWindow:") withObject:[view convertPoint:center toView:nil]];
+        [touch performSelector:NSSelectorFromString(@"_setView:") withObject:view];
+        [touch performSelector:NSSelectorFromString(@"_setPhase:") withObject:@(UITouchPhaseBegan)];
         
-        // 使用 NSInvocation 避免 performSelector 警告
-        NSMethodSignature *signature = [target methodSignatureForSelector:action];
-        if (signature) {
-            NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-            [invocation setSelector:action];
-            [invocation setTarget:target];
-            NSUInteger paramCount = signature.numberOfArguments;
-            if (paramCount >= 3) {
-                // 一个参数: - (void)handler:(UIGestureRecognizer *)gesture;
-                [invocation setArgument:&gesture atIndex:2];
-            }
-            [invocation invoke];
-        }
+        NSSet *touches = [NSSet setWithObject:touch];
+        
+        [gesture touchesBegan:touches withEvent:event];
+        
+        [touch performSelector:NSSelectorFromString(@"_setPhase:") withObject:@(UITouchPhaseEnded)];
+        
+        [gesture touchesEnded:touches withEvent:event];
+        
+        NSLog(@"[TouchPlayer] Successfully triggered gesture: %@", NSStringFromClass(gesture.class));
+    }
+    @catch (NSException *exception) {
+        NSLog(@"[TouchPlayer] Failed to trigger gesture: %@, error: %@", 
+              NSStringFromClass(gesture.class), exception.description);
     }
 }
 

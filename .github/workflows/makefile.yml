@@ -27,7 +27,7 @@ jobs:
       - name: Init submodules
         run: |
           git submodule update --init --recursive
-          git submodule add https://github.com/Start 5/PTFakeTouch.git vendor/PTFakeTouch
+          git submodule add https://github.com/Ret70/PTFakeTouch.git vendor/PTFakeTouch
 
       - name: Install dependencies
         run: |

@@ -875,4 +875,25 @@
     }
 }
 
+- (void)setUserInteractionEnabled:(BOOL)enabled {
+    _contentView.userInteractionEnabled = enabled;
+    _toggleButton.userInteractionEnabled = enabled;
+    
+    // 如果禁用交互，确保按钮都不可点击
+    if (!enabled) {
+        for (UIButton *btn in @[_recordButton, _playButton, _pauseButton, _stopButton, _saveButton, _scriptButton, _logsButton]) {
+            btn.userInteractionEnabled = NO;
+        }
+    } else {
+        // 恢复交互，根据状态决定按钮是否可用
+        _recordButton.userInteractionEnabled = !_isPlaying;
+        _playButton.userInteractionEnabled = !_isRecording && !_isPlaying;
+        _pauseButton.userInteractionEnabled = _isPlaying && !_isRecording;
+        _stopButton.userInteractionEnabled = _isPlaying || _isRecording;
+        _saveButton.userInteractionEnabled = YES;
+        _scriptButton.userInteractionEnabled = YES;
+        _logsButton.userInteractionEnabled = YES;
+    }
+}
+
 @end

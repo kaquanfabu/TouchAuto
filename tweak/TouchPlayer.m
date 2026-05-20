@@ -563,19 +563,66 @@
     UIEvent *event = [[UIEvent alloc] init];
     
     // 使用 NSValue 包装触摸点
-    NSValue *touchPoint = [NSValue valueWithCGPoint:center];
+    NSValue *touchPoint = [NSValue valueWithCGPoint:[view convertPoint:center toView:nil]];
     
-    // 使用 performSelector 来调用私有方法（更安全）
+    // 使用 NSInvocation 来调用私有方法（更安全，避免警告）
     @try {
-        [touch performSelector:NSSelectorFromString(@"_setLocationInWindow:") withObject:[view convertPoint:center toView:nil]];
-        [touch performSelector:NSSelectorFromString(@"_setView:") withObject:view];
-        [touch performSelector:NSSelectorFromString(@"_setPhase:") withObject:@(UITouchPhaseBegan)];
+        // _setLocationInWindow:
+        SEL setLocationSel = NSSelectorFromString(@"_setLocationInWindow:");
+        if ([touch respondsToSelector:setLocationSel]) {
+            NSMethodSignature *signature = [touch methodSignatureForSelector:setLocationSel];
+            if (signature) {
+                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+                [invocation setSelector:setLocationSel];
+                [invocation setTarget:touch];
+                [invocation setArgument:&touchPoint atIndex:2];
+                [invocation invoke];
+            }
+        }
+        
+        // _setView:
+        SEL setViewSel = NSSelectorFromString(@"_setView:");
+        if ([touch respondsToSelector:setViewSel]) {
+            NSMethodSignature *signature = [touch methodSignatureForSelector:setViewSel];
+            if (signature) {
+                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+                [invocation setSelector:setViewSel];
+                [invocation setTarget:touch];
+                [invocation setArgument:&view atIndex:2];
+                [invocation invoke];
+            }
+        }
+        
+        // _setPhase:
+        NSNumber *phaseBegan = @(UITouchPhaseBegan);
+        SEL setPhaseSel = NSSelectorFromString(@"_setPhase:");
+        if ([touch respondsToSelector:setPhaseSel]) {
+            NSMethodSignature *signature = [touch methodSignatureForSelector:setPhaseSel];
+            if (signature) {
+                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+                [invocation setSelector:setPhaseSel];
+                [invocation setTarget:touch];
+                [invocation setArgument:&phaseBegan atIndex:2];
+                [invocation invoke];
+            }
+        }
         
         NSSet *touches = [NSSet setWithObject:touch];
         
         [gesture touchesBegan:touches withEvent:event];
         
-        [touch performSelector:NSSelectorFromString(@"_setPhase:") withObject:@(UITouchPhaseEnded)];
+        // _setPhase: UITouchPhaseEnded
+        NSNumber *phaseEnded = @(UITouchPhaseEnded);
+        if ([touch respondsToSelector:setPhaseSel]) {
+            NSMethodSignature *signature = [touch methodSignatureForSelector:setPhaseSel];
+            if (signature) {
+                NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+                [invocation setSelector:setPhaseSel];
+                [invocation setTarget:touch];
+                [invocation setArgument:&phaseEnded atIndex:2];
+                [invocation invoke];
+            }
+        }
         
         [gesture touchesEnded:touches withEvent:event];
         

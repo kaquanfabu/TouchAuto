@@ -2,6 +2,12 @@ ARCHS = arm64
 TARGET = iphone:clang:16.5:15.0
 SDKVERSION = 16.5
 
+# PTFakeTouch library path
+PTFAKETOUCH_PATH = $(THEOS_VENDOR_PATH)/PTFakeTouch
+PTFAKETOUCH_LOCAL_PATH = $(TOP)/vendor/PTFakeTouch
+PTFAKETOUCH_SUBDIR = $(PTFAKETOUCH_LOCAL_PATH)
+SUBMODULES += $(PTFAKETOUCH_LOCAL_PATH)
+
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = TouchAuto
@@ -15,6 +21,9 @@ TouchAuto_FILES = tweak/TouchAuto.m \
                   tweak/FloatingPanel.m \
                   tweak/TouchEvent.m \
                   tweak/AdvancedFeatures.m
+
+# PTFakeTouch library
+TouchAuto_LDFLAGS = -L$(PTFAKETOUCH_PATH) -lPTFakeTouch
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 

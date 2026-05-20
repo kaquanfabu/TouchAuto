@@ -2,63 +2,7 @@
 #import "FloatingPanel.h"
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
-#import <objc/message.h>
-#import <mach/mach_time.h>
-
-typedef struct __IOHIDEvent *IOHIDEventRef;
-typedef uint32_t IOHIDDigitizerTransducerType;
-#define kIOHIDDigitizerTransducerTypeHand 3
-
-extern IOHIDEventRef IOHIDEventCreateDigitizerEvent(
-    CFAllocatorRef allocator,
-    AbsoluteTime timeStamp,
-    IOHIDDigitizerTransducerType type,
-    uint32_t index,
-    uint32_t identity,
-    uint32_t eventMask,
-    uint32_t buttonMask,
-    int32_t x,
-    int32_t y,
-    int32_t z,
-    int32_t tipPressure,
-    Boolean range,
-    Boolean touch,
-    CFOptionFlags options,
-    uint64_t reserved
-);
-
-extern IOHIDEventRef IOHIDEventCreateDigitizerFingerEvent(
-    CFAllocatorRef allocator,
-    AbsoluteTime timeStamp,
-    uint32_t index,
-    uint32_t identity,
-    uint32_t eventMask,
-    CGFloat x,
-    CGFloat y,
-    CGFloat z,
-    CGFloat tipPressure,
-    CGFloat twist,
-    Boolean range,
-    Boolean touch,
-    CFOptionFlags options
-);
-
-extern void IOHIDEventAppendEvent(IOHIDEventRef parent, IOHIDEventRef child, CFOptionFlags flags);
-
-@interface UIEvent (TouchAutoPrivate)
-- (void)_setHIDEvent:(IOHIDEventRef)event;
-@end
-
-static inline AbsoluteTime TAAbsoluteTimeNow(void) {
-    uint64_t t = mach_absolute_time();
-    AbsoluteTime at;
-    at.hi = (uint32_t)(t >> 32);
-    at.lo = (uint32_t)t;
-    return at;
-}
-@interface UIEvent (Private)
-- (void)_setHIDEvent:(IOHIDEventRef)event;
-@end
+#import <PTFakeTouch/PTFakeTouch.h>
 
 @interface TouchPlayer ()
 
@@ -389,58 +333,16 @@ static inline AbsoluteTime TAAbsoluteTimeNow(void) {
 }
 
 - (void)triggerTouchAtLocation:(CGPoint)location withType:(TouchEventType)type {
-    UIWindow *window = [self getKeyWindow];
-    if (!window) return;
+    static int touchId = 1;
+    int currentTouchId = touchId++;
+    if (touchId > 100) touchId = 1;
 
-    CGPoint p = [window convertPoint:location fromWindow:nil];
-
-    BOOL isDown = (type != TouchEventTypeEnded);
-    IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(
-        kCFAllocatorDefault,
-        TAAbsoluteTimeNow(),
-        kIOHIDDigitizerTransducerTypeHand,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        isDown,
-        isDown,
-        0,
-        0
-    );
-    IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(
-    kCFAllocatorDefault,
-    TAAbsoluteTimeNow(),
-    1,
-    2,
-    0,
-    p.x,
-    p.y,
-    0,
-    0.4,
-    0.4,
-    isDown,
-    isDown,
-    0
-);
-
-
-    IOHIDEventAppendEvent(parent, child,0);
-
-    UIEvent *event = [[NSClassFromString(@"UITouchesEvent") alloc] init];
-    SEL hidSel = NSSelectorFromString(@"_setHIDEvent:");
-if ([event respondsToSelector:hidSel]) {
-    ((void (*)(id, SEL, IOHIDEventRef))objc_msgSend)(event, hidSel, parent);
-}
-
-    [[UIApplication sharedApplication] sendEvent:event];
-
-    CFRelease(child);
-    CFRelease(parent);
+    if (type != TouchEventTypeEnded) {
+        [PTFakeTouch activeTouchWithId:currentTouchId atPoint:location];
+    } else {
+        [PTFakeTouch activeTouchWithId:currentTouchId atPoint:location];
+        [PTFakeTouch endTouchWithId:currentTouchId atPoint:location];
+    }
 }
 
 - (UIView *)findInteractiveSuperview:(UIView *)view {

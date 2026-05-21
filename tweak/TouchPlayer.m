@@ -1016,8 +1016,9 @@
     if ([hitView isKindOfClass:[UITextField class]] || 
         [hitView isKindOfClass:NSClassFromString(@"UISearchBar")]) {
         NSLog(@"[TouchPlayer] Using simple touch for text input: %@", NSStringFromClass(hitView.class));
-        [hitView sendActionsForControlEvents:UIControlEventTouchDown];
-        [hitView sendActionsForControlEvents:UIControlEventTouchUpInside];
+        UIControl *control = (UIControl *)hitView;
+        [control sendActionsForControlEvents:UIControlEventTouchDown];
+        [control sendActionsForControlEvents:UIControlEventTouchUpInside];
         return;
     }
     

@@ -661,7 +661,7 @@
     NSLog(@"[TouchPlayer] CollectionView class: %@", NSStringFromClass(collectionView.class));
     
     // 【修复】检查 delegate 是否为 nil
-    id delegate = collectionView.delegate;
+    delegate = collectionView.delegate;
     if (delegate) {
         NSLog(@"[TouchPlayer] CollectionView delegate: %@", NSStringFromClass([delegate class]));
     } else {
@@ -684,7 +684,7 @@
                            scrollPosition:UICollectionViewScrollPositionNone];
     
     // 【修复1】然后调用 delegate 的 didSelectItemAtIndexPath
-    id delegate = collectionView.delegate;
+    delegate = collectionView.delegate;
     if (delegate && [delegate respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
         NSLog(@"[TouchPlayer] didSelectItemAtIndexPath triggered");
         [delegate collectionView:collectionView didSelectItemAtIndexPath:indexPath];

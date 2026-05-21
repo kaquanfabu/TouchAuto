@@ -2,7 +2,7 @@
 #import "FloatingPanel.h"
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
-#import "PTFakeTouch.h"
+#import "PTFakeTouch/PTFakeTouch.h"
 
 @interface TouchPlayer ()
 

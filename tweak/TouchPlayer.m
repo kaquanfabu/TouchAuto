@@ -803,15 +803,22 @@
     
     NSLog(@"[TouchPlayer] Triggering UIControl: %@", NSStringFromClass(control.class));
     
+    // 对 UITextField/UISearchBar 进行特殊处理
+    if ([control isKindOfClass:[UITextField class]] || 
+        [control isKindOfClass:NSClassFromString(@"UISearchBar")]) {
+        NSLog(@"[TouchPlayer] Special handling for text input control");
+        // 对于文本输入控件，只发送基本事件，不调用私有方法
+        [control sendActionsForControlEvents:UIControlEventTouchDown];
+        [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+        return YES;
+    }
+    
     // 模拟完整触摸流程
     [self simulateTouchSequenceOnView:control];
     
     // 触发所有触摸事件
     [control sendActionsForControlEvents:UIControlEventTouchDown];
     [control sendActionsForControlEvents:UIControlEventTouchUpInside];
-    
-    // 触发目标 action
-    [self triggerTargetActionsForControl:control];
     
     return YES;
 }
@@ -907,19 +914,34 @@
 #pragma mark - 触摸模拟辅助方法
 
 - (void)simulateTouchSequenceOnView:(UIView *)view {
+    if (!view) return;
+    
     CGPoint center = CGPointMake(view.bounds.size.width / 2, view.bounds.size.height / 2);
     CGPoint windowPoint = [view convertPoint:center toView:nil];
     
     UITouch *touch = [self createSimulatedTouchAtLocation:windowPoint inView:view];
-    if (touch) {
-        NSSet *touches = [NSSet setWithObject:touch];
-        UIEvent *event = [self createSimulatedEventWithTouches:touches];
-        
+    if (!touch) {
+        NSLog(@"[TouchPlayer] Failed to create simulated touch for %@", NSStringFromClass(view.class));
+        return;
+    }
+    
+    NSSet *touches = [NSSet setWithObject:touch];
+    UIEvent *event = [self createSimulatedEventWithTouches:touches];
+    if (!event) {
+        NSLog(@"[TouchPlayer] Failed to create simulated event for %@", NSStringFromClass(view.class));
+        return;
+    }
+    
+    @try {
         [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseBegan)];
         [view touchesBegan:touches withEvent:event];
         
         [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseEnded)];
         [view touchesEnded:touches withEvent:event];
+    }
+    @catch (NSException *exception) {
+        NSLog(@"[TouchPlayer] Exception during touch simulation on %@: %@", 
+              NSStringFromClass(view.class), exception);
     }
 }
 
@@ -976,6 +998,11 @@
 }
 
 - (void)injectUIKitTouchAtLocation:(CGPoint)location window:(UIWindow *)window event:(TouchEvent *)event {
+    if (!window || !event) {
+        NSLog(@"[TouchPlayer] Invalid parameters for UIKit touch injection");
+        return;
+    }
+    
     // 【修复2】发送完整触摸生命周期
     // Began -> Moved -> Ended
     
@@ -985,32 +1012,46 @@
         return;
     }
     
-    // 创建触摸对象
-    UITouch *touch = [self createUITouchAtLocation:location inView:hitView];
-    if (!touch) {
-        NSLog(@"[TouchPlayer] Failed to create touch object");
+    // 对于文本输入控件，使用简单的事件发送
+    if ([hitView isKindOfClass:[UITextField class]] || 
+        [hitView isKindOfClass:NSClassFromString(@"UISearchBar")]) {
+        NSLog(@"[TouchPlayer] Using simple touch for text input: %@", NSStringFromClass(hitView.class));
+        [hitView sendActionsForControlEvents:UIControlEventTouchDown];
+        [hitView sendActionsForControlEvents:UIControlEventTouchUpInside];
         return;
     }
     
-    NSSet *touches = [NSSet setWithObject:touch];
-    UIEvent *eventObj = [self createUIEventWithTouches:touches];
-    
-    // 1. Touch Began
-    [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseBegan)];
-    [hitView touchesBegan:touches withEvent:eventObj];
-    NSLog(@"[TouchPlayer] UIKit Touch Began at (%.1f, %.1f)", location.x, location.y);
-    
-    // 2. Touch Moved (如果是从 began 过来的或者 type 是 moved)
-    if (event.type == TouchEventTypeMoved || event.previousLocation.x != location.x || event.previousLocation.y != location.y) {
-        [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseMoved)];
-        [hitView touchesMoved:touches withEvent:eventObj];
-        NSLog(@"[TouchPlayer] UIKit Touch Moved");
+    @try {
+        // 创建触摸对象
+        UITouch *touch = [self createUITouchAtLocation:location inView:hitView];
+        if (!touch) {
+            NSLog(@"[TouchPlayer] Failed to create touch object");
+            return;
+        }
+        
+        NSSet *touches = [NSSet setWithObject:touch];
+        UIEvent *eventObj = [self createUIEventWithTouches:touches];
+        
+        // 1. Touch Began
+        [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseBegan)];
+        [hitView touchesBegan:touches withEvent:eventObj];
+        NSLog(@"[TouchPlayer] UIKit Touch Began at (%.1f, %.1f)", location.x, location.y);
+        
+        // 2. Touch Moved (如果是从 began 过来的或者 type 是 moved)
+        if (event.type == TouchEventTypeMoved || event.previousLocation.x != location.x || event.previousLocation.y != location.y) {
+            [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseMoved)];
+            [hitView touchesMoved:touches withEvent:eventObj];
+            NSLog(@"[TouchPlayer] UIKit Touch Moved");
+        }
+        
+        // 3. Touch Ended
+        [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseEnded)];
+        [hitView touchesEnded:touches withEvent:eventObj];
+        NSLog(@"[TouchPlayer] UIKit Touch Ended at (%.1f, %.1f)", location.x, location.y);
     }
-    
-    // 3. Touch Ended
-    [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseEnded)];
-    [hitView touchesEnded:touches withEvent:eventObj];
-    NSLog(@"[TouchPlayer] UIKit Touch Ended at (%.1f, %.1f)", location.x, location.y);
+    @catch (NSException *exception) {
+        NSLog(@"[TouchPlayer] Exception in UIKit touch injection: %@", exception);
+    }
 }
 
 - (UITouch *)createUITouchAtLocation:(CGPoint)location inView:(UIView *)view {

@@ -661,7 +661,7 @@
     NSLog(@"[TouchPlayer] CollectionView class: %@", NSStringFromClass(collectionView.class));
     
     // 【修复】检查 delegate 是否为 nil
-    delegate = collectionView.delegate;
+    id delegate = collectionView.delegate;
     if (delegate) {
         NSLog(@"[TouchPlayer] CollectionView delegate: %@", NSStringFromClass([delegate class]));
     } else {

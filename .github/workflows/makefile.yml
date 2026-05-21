@@ -1,0 +1,63 @@
+
+name: Build TouchAuto
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  THEOS: ""
+  THEOS_PACKAGE_SCHEME: rootless
+  FINALPACKAGE: "1"
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install dpkg ldid-procursus make
+
+      - name: Checkout Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Checkout SDKs
+        uses: actions/checkout@v4
+        with:
+          repository: theos/sdks
+          path: theos/sdks
+
+      - name: Build tweak
+        run: |
+          export THEOS=$GITHUB_WORKSPACE/theos
+          make package
+
+      - name: Collect artifacts
+        run: |
+          export THEOS=$GITHUB_WORKSPACE/theos
+          cp packages/*.deb .
+          find .theos/obj -name "*.dylib" -exec cp {} . \;
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: HookValidate-build
+          path: |
+            *.deb
+            *.dylib

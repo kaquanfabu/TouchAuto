@@ -547,11 +547,15 @@
         id delegate = ((UITableView *)hitView).delegate;
         if (delegate) {
             NSLog(@"[TouchPlayer] delegate class: %@", NSStringFromClass([delegate class]));
+        } else {
+            NSLog(@"[TouchPlayer] delegate class: nil");
         }
     } else if ([hitView isKindOfClass:[UICollectionView class]]) {
         id delegate = ((UICollectionView *)hitView).delegate;
         if (delegate) {
             NSLog(@"[TouchPlayer] delegate class: %@", NSStringFromClass([delegate class]));
+        } else {
+            NSLog(@"[TouchPlayer] delegate class: nil");
         }
     }
     
@@ -655,7 +659,14 @@
     
     NSLog(@"[TouchPlayer] CollectionView location: (%.2f, %.2f)", collectionViewLocation.x, collectionViewLocation.y);
     NSLog(@"[TouchPlayer] CollectionView class: %@", NSStringFromClass(collectionView.class));
-    NSLog(@"[TouchPlayer] CollectionView delegate: %@", NSStringFromClass([collectionView.delegate class]));
+    
+    // 【修复】检查 delegate 是否为 nil
+    id delegate = collectionView.delegate;
+    if (delegate) {
+        NSLog(@"[TouchPlayer] CollectionView delegate: %@", NSStringFromClass([delegate class]));
+    } else {
+        NSLog(@"[TouchPlayer] CollectionView delegate: nil");
+    }
     
     // 获取 indexPath
     NSIndexPath *indexPath = [collectionView indexPathForItemAtPoint:collectionViewLocation];
@@ -701,7 +712,14 @@
     
     NSLog(@"[TouchPlayer] TableView location: (%.2f, %.2f)", tableViewLocation.x, tableViewLocation.y);
     NSLog(@"[TouchPlayer] TableView class: %@", NSStringFromClass(tableView.class));
-    NSLog(@"[TouchPlayer] TableView delegate: %@", NSStringFromClass([tableView.delegate class]));
+    
+    // 【修复】检查 delegate 是否为 nil
+    id tvDelegate = tableView.delegate;
+    if (tvDelegate) {
+        NSLog(@"[TouchPlayer] TableView delegate: %@", NSStringFromClass([tvDelegate class]));
+    } else {
+        NSLog(@"[TouchPlayer] TableView delegate: nil");
+    }
     
     // 获取 indexPath
     NSIndexPath *indexPath = [tableView indexPathForRowAtPoint:tableViewLocation];
@@ -718,8 +736,9 @@
                       scrollPosition:UITableViewScrollPositionNone];
     
     // 然后调用 delegate 的 didSelectRowAtIndexPath
-    if ([tableView.delegate respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
-        [tableView.delegate tableView:tableView didSelectRowAtIndexPath:indexPath];
+    id tableDelegate = tableView.delegate;
+    if (tableDelegate && [tableDelegate respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
+        [tableDelegate tableView:tableView didSelectRowAtIndexPath:indexPath];
         return YES;
     }
     
@@ -757,10 +776,6 @@
             [self simulateGestureRecognizer:longPressGesture onView:view atLocation:location];
             return YES;
         }
-        
-        // 触发其他自定义 gesture
-        [self simulateGestureRecognizer:gesture onView:view atLocation:location];
-        return YES;
     }
     
     return NO;
@@ -815,8 +830,11 @@
         [invocation getReturnValue:&targets];
     }
     
-    for (__strong id targetObj in targets) {
-        id __unsafe_unretained target = targetObj;
+    if (!targets || targets.count == 0) return;
+    
+    for (id target in targets) {
+        if (!target) continue;
+        
         SEL actionsForTargetSel = NSSelectorFromString(@"actionsForTarget:forControlEvent:");
         if ([control respondsToSelector:actionsForTargetSel]) {
             NSArray *actions = nil;
@@ -833,12 +851,14 @@
                 [invocation getReturnValue:&actions];
             }
             
-            for (NSString *actionName in actions) {
-                SEL action = NSSelectorFromString(actionName);
-                if ([target respondsToSelector:action]) {
-                    NSLog(@"[TouchPlayer] Calling target action: %@ on %@", 
-                          NSStringFromSelector(action), NSStringFromClass([target class]));
-                    [self invokeSelector:action onObject:target withObject:control];
+            if (actions && actions.count > 0) {
+                for (NSString *actionName in actions) {
+                    SEL action = NSSelectorFromString(actionName);
+                    if ([target respondsToSelector:action]) {
+                        NSLog(@"[TouchPlayer] Calling target action: %@ on %@", 
+                              NSStringFromSelector(action), NSStringFromClass([target class]));
+                        [self invokeSelector:action onObject:target withObject:control];
+                    }
                 }
             }
         }
@@ -897,8 +917,6 @@
         
         [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseBegan)];
         [view touchesBegan:touches withEvent:event];
-        
-        [NSThread sleepForTimeInterval:0.05];
         
         [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseEnded)];
         [view touchesEnded:touches withEvent:event];

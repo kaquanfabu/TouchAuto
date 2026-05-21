@@ -38,8 +38,20 @@
 
 - (void)setupVolumeListener {
     AVAudioSession *session = [AVAudioSession sharedInstance];
-    [session setActive:YES error:nil];
+    NSError *error = nil;
+    
+    [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:AVAudioSessionCategoryOptionMixWithOthers error:&error];
+    if (error) {
+        NSLog(@"[TouchRecorder] Failed to set audio session category: %@", error);
+    }
+    
+    [session setActive:YES error:&error];
+    if (error) {
+        NSLog(@"[TouchRecorder] Failed to activate audio session: %@", error);
+    }
+    
     [session addObserver:self forKeyPath:@"outputVolume" options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld context:nil];
+    NSLog(@"[TouchRecorder] Volume listener setup completed");
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
@@ -48,12 +60,40 @@
         NSNumber *oldVolume = change[NSKeyValueChangeOldKey];
         
         if (_isRecording && newVolume && oldVolume) {
-            if ([newVolume floatValue] < [oldVolume floatValue]) {
-                NSLog(@"[TouchRecorder] Volume down pressed, stopping recording...");
+            float newVol = [newVolume floatValue];
+            float oldVol = [oldVolume floatValue];
+            
+            // 检测音量减少（音量键按下）
+            if (newVol < oldVol) {
+                NSLog(@"[TouchRecorder] Volume down pressed (%.2f -> %.2f), stopping recording...", oldVol, newVol);
+                
+                // 重置系统音量（避免音量被调至最低）
+                [self resetSystemVolume];
+                
                 [self stopRecording];
             }
         }
     }
+}
+
+- (void)resetSystemVolume {
+    // 使用私有 API 重置音量到中间值
+    MPVolumeView *volumeView = [[MPVolumeView alloc] init];
+    UISlider *volumeSlider = nil;
+    
+    for (UIView *view in [volumeView subviews]){
+        if ([view isKindOfClass:[UISlider class]]){
+            volumeSlider = (UISlider*)view;
+            break;
+        }
+    }
+    
+    if (volumeSlider) {
+        [volumeSlider setValue:0.5 animated:NO];
+        [volumeSlider sendActionsForControlEvents:UIControlEventValueChanged];
+    }
+    
+    NSLog(@"[TouchRecorder] System volume reset");
 }
 
 - (void)startRecording {

@@ -6,13 +6,16 @@ SDKVERSION = 16.5
 PTFAKETOUCH_LOCAL_PATH = $(TOP)/vendor/PTFakeTouch
 PTFAKETOUCH_URL = https://github.com/Ret70/PTFakeTouch.git
 
-# Clone PTFakeTouch if not present
-PTFAKETOUCH_FOUND := $(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/PTFakeTouch.h)
-ifeq ($(PTFAKETOUCH_FOUND),)
-$(error PTFakeTouch not found. Run: git submodule add https://github.com/Ret70/PTFakeTouch.git vendor/PTFakeTouch)
-endif
+# Auto-clone PTFakeTouch if not present
+ifneq ($(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/PTFakeTouch.h),)
 PTFAKETOUCH_SOURCES = $(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/PTFakeTouch/*.m) $(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition/*.m)
 PTFAKETOUCH_CFLAGS = -I$(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/PTFakeTouch -I$(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition
+else
+$(shell if [ ! -d "$(PTFAKETOUCH_LOCAL_PATH)" ]; then mkdir -p $(PTFAKETOUCH_LOCAL_PATH); fi)
+$(shell cd $(PTFAKETOUCH_LOCAL_PATH) && git clone --depth 1 https://github.com/Ret70/PTFakeTouch.git . 2>/dev/null || true)
+PTFAKETOUCH_SOURCES = $(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/PTFakeTouch/*.m) $(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition/*.m)
+PTFAKETOUCH_CFLAGS = -I$(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/PTFakeTouch -I$(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition
+endif
 
 include $(THEOS)/makefiles/common.mk
 

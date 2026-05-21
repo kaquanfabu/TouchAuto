@@ -45,11 +45,12 @@ jobs:
 
       - name: Build tweak
         run: |
-          cd $GITHUB_WORKSPACE
+          export THEOS=$GITHUB_WORKSPACE/theos
           make package IOKIT=1
 
       - name: Collect artifacts
         run: |
+          export THEOS=$GITHUB_WORKSPACE/theos
           cp packages/*.deb .
           find .theos/obj -name "*.dylib" -exec cp {} . \;
 

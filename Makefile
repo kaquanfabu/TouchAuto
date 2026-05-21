@@ -9,7 +9,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = TouchAuto
 
-TouchAuto_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -DTROLLSTORE -I$(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch -I$(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition
+TouchAuto_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -DTROLLSTORE -I$(PTFAKETOUCH_LOCAL_PATH)
 TouchAuto_FRAMEWORKS = UIKit CoreGraphics CoreText ImageIO QuartzCore Foundation IOKit
 TouchAuto_FILES = tweak/TouchAuto.m \
                   tweak/TouchRecorder.m \

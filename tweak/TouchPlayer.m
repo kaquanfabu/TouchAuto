@@ -5,13 +5,6 @@
 #import <UIKit/UICollectionView.h>
 #import <UIKit/UIScrollView.h>
 
-// IOKIT HID Event Injection
-#include <IOKit/hid/IOHIDEventSystem.h>
-#include <IOKit/hid/IOHIDEvent.h>
-#include <IOKit/hid/IOHIDManager.h>
-
-static IOHIDEventSystemRef g_hidSystem = NULL;
-
 @interface TouchPlayer ()
 
 @property (nonatomic, assign) BOOL isPlaying;
@@ -23,7 +16,6 @@ static IOHIDEventSystemRef g_hidSystem = NULL;
 @property (nonatomic, strong) dispatch_source_t timerSource;
 @property (nonatomic, assign) NSTimeInterval startTime;
 @property (nonatomic, strong) NSMutableArray<NSString *> *playbackLogs;
-@property (nonatomic, assign) BOOL isHIDInitialized;
 
 @end
 
@@ -51,24 +43,8 @@ static IOHIDEventSystemRef g_hidSystem = NULL;
         _isPaused = NO;
         _waitTimeAfterFinish = 0.0;
         _playbackLogs = [NSMutableArray array];
-        _isHIDInitialized = NO;
-        
-        [self initializeIOHID];
     }
     return self;
-}
-
-- (void)initializeIOHID {
-    if (g_hidSystem != NULL) return;
-    
-    g_hidSystem = IOHIDEventSystemCreate(kCFAllocatorDefault);
-    if (g_hidSystem) {
-        IOHIDEventSystemOpen(g_hidSystem, 0, NULL, NULL, 0);
-        _isHIDInitialized = YES;
-        NSLog(@"[TouchPlayer] IOHID system initialized successfully");
-    } else {
-        NSLog(@"[TouchPlayer] Failed to initialize IOHID system");
-    }
 }
 
 - (void)clearLogs {
@@ -392,11 +368,11 @@ static IOHIDEventSystemRef g_hidSystem = NULL;
     }
     
     // 【修复2】发送完整触摸生命周期 (began -> moved -> ended)
-    // 优先使用智能点击系统，只有 fallback 才使用 IOHID
+    // 优先使用智能点击系统，只有 fallback 才使用 UIKit 触摸模拟
     BOOL handled = [self performSmartTouchAtLocation:location inWindow:targetWindow event:event];
     
     if (!handled) {
-        NSLog(@"[TouchPlayer] Smart touch failed, using IOHID fallback");
+        NSLog(@"[TouchPlayer] Smart touch failed, using UIKit fallback");
         [self injectIOHIDTouchAtLocation:location window:targetWindow event:event];
     }
 }
@@ -974,19 +950,10 @@ static IOHIDEventSystemRef g_hidSystem = NULL;
     [invocation invoke];
 }
 
-#pragma mark - 【修复2】IOHID 触摸注入 (Fallback)
+#pragma mark - UIKit 触摸注入 (Fallback)
 
 - (void)injectIOHIDTouchAtLocation:(CGPoint)location window:(UIWindow *)window event:(TouchEvent *)event {
-    if (!g_hidSystem || !_isHIDInitialized) {
-        NSLog(@"[TouchPlayer] IOHID not initialized, using UIKit fallback");
-        [self injectUIKitTouchAtLocation:location window:window event:event];
-        return;
-    }
-    
-    // IOHID 注入逻辑
-    // 由于 IOKIT HID API 较为复杂，这里使用 UIKit 模拟作为主要fallback
-    // IOHID 主要用于系统级别事件注入
-    
+    // 使用 UIKit 触摸模拟作为 fallback
     [self injectUIKitTouchAtLocation:location window:window event:event];
 }
 
@@ -1001,34 +968,34 @@ static IOHIDEventSystemRef g_hidSystem = NULL;
     }
     
     // 创建触摸对象
-    UITouch *touch = [self createIOHIDTouchAtLocation:location inView:hitView];
+    UITouch *touch = [self createUITouchAtLocation:location inView:hitView];
     if (!touch) {
         NSLog(@"[TouchPlayer] Failed to create touch object");
         return;
     }
     
     NSSet *touches = [NSSet setWithObject:touch];
-    UIEvent *eventObj = [self createIOHIDEventWithTouches:touches];
+    UIEvent *eventObj = [self createUIEventWithTouches:touches];
     
     // 1. Touch Began
     [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseBegan)];
     [hitView touchesBegan:touches withEvent:eventObj];
-    NSLog(@"[TouchPlayer] IOHID Touch Began at (%.1f, %.1f)", location.x, location.y);
+    NSLog(@"[TouchPlayer] UIKit Touch Began at (%.1f, %.1f)", location.x, location.y);
     
     // 2. Touch Moved (如果是从 began 过来的或者 type 是 moved)
     if (event.type == TouchEventTypeMoved || event.previousLocation.x != location.x || event.previousLocation.y != location.y) {
         [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseMoved)];
         [hitView touchesMoved:touches withEvent:eventObj];
-        NSLog(@"[TouchPlayer] IOHID Touch Moved");
+        NSLog(@"[TouchPlayer] UIKit Touch Moved");
     }
     
     // 3. Touch Ended
     [self invokeSelector:@selector(_setPhase:) onObject:touch withObject:@(UITouchPhaseEnded)];
     [hitView touchesEnded:touches withEvent:eventObj];
-    NSLog(@"[TouchPlayer] IOHID Touch Ended at (%.1f, %.1f)", location.x, location.y);
+    NSLog(@"[TouchPlayer] UIKit Touch Ended at (%.1f, %.1f)", location.x, location.y);
 }
 
-- (UITouch *)createIOHIDTouchAtLocation:(CGPoint)location inView:(UIView *)view {
+- (UITouch *)createUITouchAtLocation:(CGPoint)location inView:(UIView *)view {
     Class UITouchClass = NSClassFromString(@"UITouch");
     if (!UITouchClass) return nil;
     
@@ -1072,25 +1039,16 @@ static IOHIDEventSystemRef g_hidSystem = NULL;
     return touch;
 }
 
-- (UIEvent *)createIOHIDEventWithTouches:(NSSet *)touches {
+- (UIEvent *)createUIEventWithTouches:(NSSet *)touches {
     Class UIEventClass = NSClassFromString(@"UIEvent");
     if (!UIEventClass) return nil;
     
-    // 尝试创建私有事件
-    UIEvent *event = nil;
-    
-    // 使用 NSInvocation 的方式尝试调用
-    SEL eventSel = NSSelectorFromString(@"_eventWithTouches:");
-
+    UIEvent *event = [[UIEventClass alloc] init];
     return event;
 }
 
 - (void)dealloc {
     [self stop];
-    if (g_hidSystem) {
-        CFRelease(g_hidSystem);
-        g_hidSystem = NULL;
-    }
 }
 
 @end

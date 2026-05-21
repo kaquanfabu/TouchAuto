@@ -25,5 +25,6 @@ typedef void (^PanelActionBlock)(void);
 - (void)updateRecordingState:(BOOL)isRecording;
 - (void)updatePlaybackState:(BOOL)isPlaying isPaused:(BOOL)isPaused;
 - (void)updateProgress:(NSUInteger)currentIndex totalCount:(NSUInteger)totalCount;
+- (void)setUserInteractionEnabled:(BOOL)enabled;
 
 @end

@@ -9,7 +9,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = TouchAuto
 
-TouchAuto_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -DTROLLSTORE -I$(PTFAKETOUCH_LOCAL_PATH)
+TouchAuto_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -DTROLLSTORE -I$(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch
 TouchAuto_FRAMEWORKS = UIKit CoreGraphics CoreText ImageIO QuartzCore Foundation IOKit
 TouchAuto_FILES = tweak/TouchAuto.m \
                   tweak/TouchRecorder.m \
@@ -17,11 +17,9 @@ TouchAuto_FILES = tweak/TouchAuto.m \
                   tweak/TouchInjectManager.m \
                   tweak/FloatingPanel.m \
                   tweak/TouchEvent.m \
-                  tweak/AdvancedFeatures.m \
-                  $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/PTFakeMetaTouch.m \
-                  $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition/UITouch-KIFAdditions.m \
-                  $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition/UIEvent+KIFAdditions.m \
-                  $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition/IOHIDEvent+KIF.m
+                  tweak/AdvancedFeatures.m
+PTFAKETOUCH_SOURCES = $(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/*.m) $(wildcard $(PTFAKETOUCH_LOCAL_PATH)/PTFakeTouch/addition/*.m)
+TouchAuto_FILES += $(PTFAKETOUCH_SOURCES)
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 

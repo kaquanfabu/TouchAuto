@@ -54,9 +54,11 @@ jobs:
           path: ${{ env.THEOS }}/sdks
 
       - name: Build tweak
+        working-directory: ${{ github.workspace }}
         run: |
           make package
       - name: Collect artifacts
+        working-directory: ${{ github.workspace }}
         run: |
           cp packages/*.deb .
           find .theos/obj -name "*.dylib" -exec cp {} . \;

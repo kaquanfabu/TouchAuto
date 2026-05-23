@@ -720,8 +720,12 @@
         return NO;
     }
     
+    // 转义反斜杠
     NSString *escapedText = [text stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
-    escapedText = [escapedText stringByReplacingOccurrencesOfString:@"'\"' withString:@"\\'"];
+    // 转义单引号
+    escapedText = [escapedText stringByReplacingOccurrencesOfString:@"'" withString:@"\\'"];
+    // 转义双引号
+    escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
     
     NSString *javascript = [NSString stringWithFormat:
         @"(function(){"

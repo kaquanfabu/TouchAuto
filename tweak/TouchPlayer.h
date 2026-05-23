@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <WebKit/WebKit.h>
 #import "TouchEvent.h"
 
 typedef void (^PlaybackStateChangeBlock)(BOOL isPlaying);
@@ -29,5 +30,9 @@ typedef void (^PlaybackProgressBlock)(NSUInteger currentIndex, NSUInteger totalC
 - (void)setInfiniteLoop:(BOOL)infinite;
 - (NSString *)getLogs;
 - (void)clearLogs;
+
+// iOS 18 WebView JS 注入 API
+- (BOOL)injectJavaScript:(NSString *)script intoWebView:(WKWebView *)webView;
+- (BOOL)executeJavaScriptAtPoint:(CGPoint)point inWebView:(WKWebView *)webView;
 
 @end

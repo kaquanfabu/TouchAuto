@@ -17,6 +17,11 @@
 @property (nonatomic, assign) NSTimeInterval startTime;
 @property (nonatomic, strong) NSMutableArray<NSString *> *playbackLogs;
 
+// iOS 18 WebView 私有方法
+- (void)executeEnhancedWKWebViewJavaScript:(WKWebView *)webView atPoint:(CGPoint)point;
+- (NSString *)buildEnhancedClickScript:(CGPoint)point;
+- (void)executeBasicWKWebViewClick:(WKWebView *)webView atPoint:(CGPoint)point;
+
 @end
 
 @implementation TouchPlayer
@@ -373,7 +378,7 @@
     
     if (!handled) {
         NSLog(@"[TouchPlayer] Smart touch failed, using UIKit fallback");
-        [self injectUIKitTouchAtLocation:location window:targetWindow event:event];
+        [self injectIOHIDTouchAtLocation:location window:targetWindow event:event];
     }
 }
 
@@ -383,27 +388,16 @@
     UIApplication *app = [UIApplication sharedApplication];
     if (!app) return nil;
     
-    // iOS 18+ 支持
-    if (@available(iOS 18.0, *)) {
-        UIWindow *foundWindow = [self findTargetWindowiOS18:location];
-        if (foundWindow) return foundWindow;
-    }
-    
-    // 遍历 windows.reverseObjectEnumerator
+    // 【修复4】遍历 windows.reverseObjectEnumerator
     // 跳过 hidden window
-    // 允许更多 window level
+    // 仅允许 windowLevel == UIWindowLevelNormal
+    // 对每个 window 执行 hitTest 找到真正业务 window
+    
     NSEnumerator *windowEnumerator = [app.windows reverseObjectEnumerator];
     
     for (UIWindow *window in windowEnumerator) {
         if (window.hidden) continue;
-        
-        // iOS 18 可能使用不同的 window level
-        CGFloat level = window.windowLevel;
-        if (level != UIWindowLevelNormal && 
-            level != UIWindowLevelAlert && 
-            level != UIWindowLevelStatusBar) {
-            continue;
-        }
+        if (window.windowLevel != UIWindowLevelNormal) continue;
         
         // 使用 hitTest 验证 window 是否能接收事件
         CGPoint windowPoint = [window convertPoint:location fromWindow:nil];
@@ -412,47 +406,18 @@
         if (hit && hit.window == window) {
             NSLog(@"[TouchPlayer] Found target window: %@ (level:%.1f)", 
                   NSStringFromClass(window.class), window.windowLevel);
+            
+            // 【修复6】输出 window class
+            NSLog(@"[TouchPlayer] window class: %@", NSStringFromClass(window.class));
+            
             return window;
         }
     }
     
     // Fallback: 尝试使用 keyWindow
     UIWindow *keyWindow = [self getKeyWindow];
-    if (keyWindow && !keyWindow.hidden) {
+    if (keyWindow && !keyWindow.hidden && keyWindow.windowLevel == UIWindowLevelNormal) {
         return keyWindow;
-    }
-    
-    return nil;
-}
-
-- (UIWindow *)findTargetWindowiOS18:(CGPoint)location API_AVAILABLE(ios(18.0)) {
-    UIApplication *app = [UIApplication sharedApplication];
-    
-    // iOS 18+ 可能需要检查更多场景
-    for (UIScene *scene in app.connectedScenes) {
-        if (scene.activationState != UISceneActivationStateForegroundActive) continue;
-        
-        if ([scene isKindOfClass:[UIWindowScene class]]) {
-            UIWindowScene *windowScene = (UIWindowScene *)scene;
-            
-            // 按 window level 排序查找
-            NSArray *sortedWindows = [windowScene.windows sortedArrayUsingComparator:^NSComparisonResult(UIWindow *w1, UIWindow *w2) {
-                return [@(w2.windowLevel) compare:@(w1.windowLevel)];
-            }];
-            
-            for (UIWindow *window in sortedWindows) {
-                if (window.hidden) continue;
-                
-                CGPoint windowPoint = [window convertPoint:location fromWindow:nil];
-                UIView *hit = [window hitTest:windowPoint withEvent:nil];
-                
-                if (hit && hit.window == window) {
-                    NSLog(@"[TouchPlayer] iOS 18+: Found target window: %@ (level:%.1f)", 
-                          NSStringFromClass(window.class), window.windowLevel);
-                    return window;
-                }
-            }
-        }
     }
     
     return nil;
@@ -658,16 +623,6 @@
     if ([view isKindOfClass:[UICollectionView class]]) return YES;
     if ([view isKindOfClass:[UIScrollView class]]) return YES;
     if ([view isKindOfClass:[WKWebView class]]) return YES;
-    if ([view isKindOfClass:[UIWebView class]]) return YES;
-    
-    // iOS 18+ 特殊视图类型
-    if (@available(iOS 18.0, *)) {
-        // iOS 18 可能引入的新视图类型
-        Class UIButtonConfigurationClass = NSClassFromString(@"UIButtonConfiguration");
-        if (UIButtonConfigurationClass && [view respondsToSelector:@selector(configuration)]) {
-            return YES;
-        }
-    }
     
     // 检查是否有 gesture recognizers
     if (view.gestureRecognizers && view.gestureRecognizers.count > 0) {
@@ -945,20 +900,155 @@
     CGPoint webViewLocation = [webView convertPoint:location fromView:nil];
     NSLog(@"[TouchPlayer] WKWebView location: (%.2f, %.2f)", webViewLocation.x, webViewLocation.y);
     
-    NSString *javascript = [NSString stringWithFormat:
-        @"document.elementFromPoint(%f, %f).click();", 
-        webViewLocation.x, 
-        webViewLocation.y];
+    // iOS 18 增强的 JavaScript 注入
+    [self executeEnhancedWKWebViewJavaScript:webView atPoint:webViewLocation];
+    
+    return YES;
+}
+
+- (void)executeEnhancedWKWebViewJavaScript:(WKWebView *)webView atPoint:(CGPoint)point {
+    // iOS 18 多策略 JS 注入
+    NSString *javascript = [self buildEnhancedClickScript:point];
+    
+    NSLog(@"[TouchPlayer] Executing enhanced JavaScript for iOS 18");
     
     [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
         if (error) {
             NSLog(@"[TouchPlayer] JavaScript error: %@", error);
+            // 降级到基础点击
+            [self executeBasicWKWebViewClick:webView atPoint:point];
         } else {
-            NSLog(@"[TouchPlayer] JavaScript executed successfully");
+            NSLog(@"[TouchPlayer] JavaScript executed successfully, result: %@", result);
         }
     }];
+}
+
+- (NSString *)buildEnhancedClickScript:(CGPoint)point {
+    // iOS 18 增强版点击脚本，支持多种元素类型
+    return [NSString stringWithFormat:
+        @"(function() {"
+        "   var x = %f, y = %f;"
+        "   var element = document.elementFromPoint(x, y);"
+        "   if (!element) {"
+        "       console.log('No element found at', x, y);"
+        "       return {success: false, reason: 'no_element'};"
+        "   }"
+        "   console.log('Found element:', element.tagName, element);"
+        "   "
+        "   // 尝试多种点击方式"
+        "   var clicked = false;"
+        "   var result = {success: true, tag: element.tagName, x: x, y: y};"
+        "   "
+        "   // 1. 原生 click() 方法"
+        "   if (element.click) {"
+        "       element.click();"
+        "       clicked = true;"
+        "       result.method = 'click';"
+        "   }"
+        "   "
+        "   // 2. dispatchEvent - MouseEvent"
+        "   if (!clicked) {"
+        "       try {"
+        "           var mouseEvent = new MouseEvent('click', {"
+        "               bubbles: true,"
+        "               cancelable: true,"
+        "               view: window,"
+        "               clientX: x,"
+        "               clientY: y"
+        "           });"
+        "           element.dispatchEvent(mouseEvent);"
+        "           clicked = true;"
+        "           result.method = 'mouseEvent';"
+        "       } catch(e) { console.log('MouseEvent failed:', e); }"
+        "   }"
+        "   "
+        "   // 3. dispatchEvent - PointerEvent (iOS 18 优先)"
+        "   if (!clicked) {"
+        "       try {"
+        "           var pointerEvent = new PointerEvent('pointerdown', {"
+        "               bubbles: true,"
+        "               cancelable: true,"
+        "               view: window,"
+        "               clientX: x,"
+        "               clientY: y,"
+        "               pointerType: 'touch'"
+        "           });"
+        "           element.dispatchEvent(pointerEvent);"
+        "           "
+        "           var pointerUpEvent = new PointerEvent('pointerup', {"
+        "               bubbles: true,"
+        "               cancelable: true,"
+        "               view: window,"
+        "               clientX: x,"
+        "               clientY: y,"
+        "               pointerType: 'touch'"
+        "           });"
+        "           element.dispatchEvent(pointerUpEvent);"
+        "           "
+        "           clicked = true;"
+        "           result.method = 'pointerEvent';"
+        "       } catch(e) { console.log('PointerEvent failed:', e); }"
+        "   }"
+        "   "
+        "   // 4. TouchEvents (iOS 原生触摸)"
+        "   if (!clicked) {"
+        "       try {"
+        "           var touch = new Touch({ target: element, clientX: x, clientY: y });"
+        "           var touchList = [touch];"
+        "           "
+        "           var touchStart = new TouchEvent('touchstart', {"
+        "               touches: touchList,"
+        "               targetTouches: touchList,"
+        "               changedTouches: touchList,"
+        "               bubbles: true"
+        "           });"
+        "           element.dispatchEvent(touchStart);"
+        "           "
+        "           var touchEnd = new TouchEvent('touchend', {"
+        "               touches: [],"
+        "               targetTouches: [],"
+        "               changedTouches: touchList,"
+        "               bubbles: true"
+        "           });"
+        "           element.dispatchEvent(touchEnd);"
+        "           "
+        "           clicked = true;"
+        "           result.method = 'touchEvent';"
+        "       } catch(e) { console.log('TouchEvent failed:', e); }"
+        "   }"
+        "   "
+        "   // 5. 尝试点击父元素"
+        "   if (!clicked && element.parentElement) {"
+        "       element.parentElement.click();"
+        "       result.method = 'parentClick';"
+        "       clicked = true;"
+        "   }"
+        "   "
+        "   // 6. 特殊元素处理"
+        "   var tag = element.tagName.toLowerCase();"
+        "   if (tag === 'input' || tag === 'textarea') {"
+        "       element.focus();"
+        "       if (element.type !== 'button' && element.type !== 'submit') {"
+        "           result.method = 'focus';"
+        "       }"
+        "   }"
+        "   if (tag === 'a' && element.href) {"
+        "       if (!clicked) window.location.href = element.href;"
+        "   }"
+        "   "
+        "   return result;"
+        "})();",
+        point.x, point.y];
+}
+
+- (void)executeBasicWKWebViewClick:(WKWebView *)webView atPoint:(CGPoint)point {
+    // 基础降级方案
+    NSString *basicScript = [NSString stringWithFormat:
+        @"var element = document.elementFromPoint(%f, %f);"
+        @"if (element) element.click();",
+        point.x, point.y];
     
-    return YES;
+    [webView evaluateJavaScript:basicScript completionHandler:nil];
 }
 
 #pragma mark - 触摸模拟辅助方法
@@ -1159,6 +1249,46 @@
 
 - (void)dealloc {
     [self stop];
+}
+
+#pragma mark - iOS 18 WebView 公共 API
+
+- (BOOL)injectJavaScript:(NSString *)script intoWebView:(WKWebView *)webView {
+    if (!webView || !script) {
+        NSLog(@"[TouchPlayer] Invalid parameters for JS injection");
+        return NO;
+    }
+    
+    NSLog(@"[TouchPlayer] Injecting JavaScript into WebView: %@", webView);
+    
+    __block BOOL success = NO;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    
+    [webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[TouchPlayer] JS injection failed: %@", error);
+        } else {
+            NSLog(@"[TouchPlayer] JS injected successfully, result: %@", result);
+            success = YES;
+        }
+        dispatch_semaphore_signal(semaphore);
+    }];
+    
+    dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
+    
+    return success;
+}
+
+- (BOOL)executeJavaScriptAtPoint:(CGPoint)point inWebView:(WKWebView *)webView {
+    if (!webView) {
+        NSLog(@"[TouchPlayer] Invalid WebView");
+        return NO;
+    }
+    
+    NSLog(@"[TouchPlayer] Executing JavaScript at point (%.2f, %.2f)", point.x, point.y);
+    
+    [self executeEnhancedWKWebViewJavaScript:webView atPoint:point];
+    return YES;
 }
 
 @end

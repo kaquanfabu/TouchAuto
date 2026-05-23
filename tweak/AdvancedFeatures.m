@@ -6,6 +6,14 @@
 
 @property (nonatomic, strong) NSMutableArray *scheduledTimers;
 
+// iOS 18 WebView 私有方法
+- (NSString *)buildClickScriptForStrategy:(WebViewClickStrategy)strategy atPoint:(CGPoint)point webView:(WKWebView *)webView;
+- (NSString *)buildAutoClickScript:(CGPoint)point;
+- (NSString *)buildMouseEventScript:(CGPoint)point;
+- (NSString *)buildPointerEventScript:(CGPoint)point;
+- (NSString *)buildTouchEventScript:(CGPoint)point;
+- (WKWebView *)findWebViewInHierarchy:(UIView *)view;
+
 @end
 
 @implementation AdvancedFeatures
@@ -477,16 +485,23 @@
         return NO;
     }
     
+    NSLog(@"[AdvancedFeatures] iOS 18 triggering WKWebView action");
+    
     CGPoint webViewLocation = [webView convertPoint:location fromView:view];
     
-    NSString *javascript = [NSString stringWithFormat:
-        @"document.elementFromPoint(%f, %f).click();", 
-        webViewLocation.x, 
-        webViewLocation.y];
+    // iOS 18 使用增强的 JavaScript 点击策略
+    NSString *javascript = [self buildAutoClickScript:webViewLocation];
     
     [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
         if (error) {
-            NSLog(@"[AdvancedFeatures] JavaScript error: %@", error);
+            NSLog(@"[AdvancedFeatures] iOS 18 WKWebView JavaScript error: %@", error);
+            // 降级到简单的 click() 方法
+            NSString *fallbackScript = [NSString stringWithFormat:
+                @"var e=document.elementFromPoint(%f,%f);if(e)e.click();", 
+                webViewLocation.x, webViewLocation.y];
+            [webView evaluateJavaScript:fallbackScript completionHandler:nil];
+        } else {
+            NSLog(@"[AdvancedFeatures] iOS 18 WKWebView JavaScript executed: %@", result);
         }
     }];
     
@@ -560,6 +575,267 @@
 
 - (void)dealloc {
     [self cancelAllScheduledTasks];
+}
+
+#pragma mark - iOS 18 WebView 高级功能
+
+- (BOOL)clickWebViewElementAtPoint:(CGPoint)point strategy:(WebViewClickStrategy)strategy {
+    WKWebView *webView = [self findFrontWebView];
+    if (!webView) {
+        NSLog(@"[AdvancedFeatures] No WebView found for iOS 18 click");
+        return NO;
+    }
+    
+    NSLog(@"[AdvancedFeatures] iOS 18 WebView click at (%.2f, %.2f), strategy: %ld", point.x, point.y, (long)strategy);
+    
+    NSString *javascript = [self buildClickScriptForStrategy:strategy atPoint:point webView:webView];
+    
+    __block BOOL success = NO;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    
+    [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[AdvancedFeatures] iOS 18 WebView click failed: %@", error);
+        } else {
+            NSLog(@"[AdvancedFeatures] iOS 18 WebView click succeeded, result: %@", result);
+            success = YES;
+        }
+        dispatch_semaphore_signal(semaphore);
+    }];
+    
+    dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
+    
+    return success;
+}
+
+- (NSString *)buildClickScriptForStrategy:(WebViewClickStrategy)strategy atPoint:(CGPoint)point webView:(WKWebView *)webView {
+    CGPoint webViewPoint = [webView convertPoint:point fromView:nil];
+    
+    switch (strategy) {
+        case WebViewClickStrategyAuto:
+            return [self buildAutoClickScript:webViewPoint];
+        case WebViewClickStrategyClick:
+            return [NSString stringWithFormat:
+                @"var e=document.elementFromPoint(%f,%f);if(e)e.click();", 
+                webViewPoint.x, webViewPoint.y];
+        case WebViewClickStrategyMouseEvent:
+            return [self buildMouseEventScript:webViewPoint];
+        case WebViewClickStrategyPointerEvent:
+            return [self buildPointerEventScript:webViewPoint];
+        case WebViewClickStrategyTouchEvent:
+            return [self buildTouchEventScript:webViewPoint];
+    }
+}
+
+- (NSString *)buildAutoClickScript:(CGPoint)point {
+    return [NSString stringWithFormat:
+        @"(function(){"
+        "   var x=%f,y=%f,e=document.elementFromPoint(x,y);"
+        "   if(!e)return {success:false};"
+        "   try{"
+        "       var t=new PointerEvent('pointerdown',{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,pointerType:'touch'});"
+        "       e.dispatchEvent(t);"
+        "       var p=new PointerEvent('pointerup',{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,pointerType:'touch'});"
+        "       e.dispatchEvent(p);"
+        "   }catch(a){"
+        "       try{"
+        "           var m=new MouseEvent('click',{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y});"
+        "           e.dispatchEvent(m);"
+        "       }catch(b){"
+        "           if(e.click)e.click();"
+        "       }"
+        "   }"
+        "   return {success:true};"
+        "})();", 
+        point.x, point.y];
+}
+
+- (NSString *)buildMouseEventScript:(CGPoint)point {
+    return [NSString stringWithFormat:
+        @"(function(){"
+        "   var x=%f,y=%f,e=document.elementFromPoint(x,y);"
+        "   if(!e)return {success:false};"
+        "   var m=new MouseEvent('click',{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y});"
+        "   e.dispatchEvent(m);"
+        "   return {success:true};"
+        "})();", 
+        point.x, point.y];
+}
+
+- (NSString *)buildPointerEventScript:(CGPoint)point {
+    return [NSString stringWithFormat:
+        @"(function(){"
+        "   var x=%f,y=%f,e=document.elementFromPoint(x,y);"
+        "   if(!e)return {success:false};"
+        "   var d=new PointerEvent('pointerdown',{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,pointerType:'touch'});"
+        "   e.dispatchEvent(d);"
+        "   var u=new PointerEvent('pointerup',{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,pointerType:'touch'});"
+        "   e.dispatchEvent(u);"
+        "   return {success:true};"
+        "})();", 
+        point.x, point.y];
+}
+
+- (NSString *)buildTouchEventScript:(CGPoint)point {
+    return [NSString stringWithFormat:
+        @"(function(){"
+        "   var x=%f,y=%f,e=document.elementFromPoint(x,y);"
+        "   if(!e)return {success:false};"
+        "   var t=new Touch({target:e,clientX:x,clientY:y});"
+        "   var ts=new TouchEvent('touchstart',{touches:[t],targetTouches:[t],changedTouches:[t],bubbles:true});"
+        "   e.dispatchEvent(ts);"
+        "   var te=new TouchEvent('touchend',{touches:[],targetTouches:[],changedTouches:[t],bubbles:true});"
+        "   e.dispatchEvent(te);"
+        "   return {success:true};"
+        "})();", 
+        point.x, point.y];
+}
+
+- (BOOL)executeWebViewJavaScript:(NSString *)script completion:(WebViewJSCompletion)completion {
+    WKWebView *webView = [self findFrontWebView];
+    if (!webView) {
+        NSLog(@"[AdvancedFeatures] No WebView found for iOS 18 JS execution");
+        if (completion) completion(nil, [NSError errorWithDomain:@"AdvancedFeatures" code:-1 userInfo:@{NSLocalizedDescriptionKey:@"No WebView found"}]);
+        return NO;
+    }
+    
+    NSLog(@"[AdvancedFeatures] iOS 18 executing JavaScript: %@", script);
+    
+    [webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[AdvancedFeatures] iOS 18 JS execution failed: %@", error);
+        } else {
+            NSLog(@"[AdvancedFeatures] iOS 18 JS execution succeeded, result: %@", result);
+        }
+        if (completion) completion(result, error);
+    }];
+    
+    return YES;
+}
+
+- (BOOL)fillWebViewInput:(NSString *)selector text:(NSString *)text {
+    WKWebView *webView = [self findFrontWebView];
+    if (!webView) {
+        NSLog(@"[AdvancedFeatures] No WebView found for iOS 18 input fill");
+        return NO;
+    }
+    
+    NSString *escapedText = [text stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
+    escapedText = [escapedText stringByReplacingOccurrencesOfString:@"'\"' withString:@"\\'"];
+    
+    NSString *javascript = [NSString stringWithFormat:
+        @"(function(){"
+        "   var e=document.querySelector('%@');"
+        "   if(!e)return {success:false,error:'Element not found'};"
+        "   e.value='%@';"
+        "   e.dispatchEvent(new Event('input',{bubbles:true}));"
+        "   e.dispatchEvent(new Event('change',{bubbles:true}));"
+        "   return {success:true};"
+        "})();", 
+        selector, escapedText];
+    
+    __block BOOL success = NO;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    
+    [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
+        success = (error == nil && [result isKindOfClass:[NSDictionary class]] && [result[@"success"] boolValue]);
+        dispatch_semaphore_signal(semaphore);
+    }];
+    
+    dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
+    
+    return success;
+}
+
+- (NSString *)getWebViewElementText:(NSString *)selector {
+    WKWebView *webView = [self findFrontWebView];
+    if (!webView) {
+        NSLog(@"[AdvancedFeatures] No WebView found for iOS 18 text get");
+        return nil;
+    }
+    
+    NSString *javascript = [NSString stringWithFormat:
+        @"(function(){"
+        "   var e=document.querySelector('%@');"
+        "   return e?e.textContent:null;"
+        "})();", 
+        selector];
+    
+    __block NSString *text = nil;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    
+    [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
+        if (!error && [result isKindOfClass:[NSString class]]) {
+            text = result;
+        }
+        dispatch_semaphore_signal(semaphore);
+    }];
+    
+    dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
+    
+    return text;
+}
+
+- (BOOL)scrollWebViewToElement:(NSString *)selector {
+    WKWebView *webView = [self findFrontWebView];
+    if (!webView) {
+        NSLog(@"[AdvancedFeatures] No WebView found for iOS 18 scroll");
+        return NO;
+    }
+    
+    NSString *javascript = [NSString stringWithFormat:
+        @"(function(){"
+        "   var e=document.querySelector('%@');"
+        "   if(!e)return {success:false};"
+        "   e.scrollIntoView({behavior:'smooth',block:'center'});"
+        "   return {success:true};"
+        "})();", 
+        selector];
+    
+    __block BOOL success = NO;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    
+    [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
+        success = (error == nil);
+        dispatch_semaphore_signal(semaphore);
+    }];
+    
+    dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
+    
+    return success;
+}
+
+- (WKWebView *)findFrontWebView {
+    NSLog(@"[AdvancedFeatures] Finding front WebView for iOS 18");
+    
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (!keyWindow) {
+        return nil;
+    }
+    
+    WKWebView *webView = [self findWebViewInHierarchy:keyWindow];
+    if (webView) {
+        NSLog(@"[AdvancedFeatures] Found WebView: %@", webView);
+    } else {
+        NSLog(@"[AdvancedFeatures] No WebView found");
+    }
+    
+    return webView;
+}
+
+- (WKWebView *)findWebViewInHierarchy:(UIView *)view {
+    if ([view isKindOfClass:[WKWebView class]]) {
+        return (WKWebView *)view;
+    }
+    
+    for (UIView *subview in [view.subviews reverseObjectEnumerator]) {
+        WKWebView *webView = [self findWebViewInHierarchy:subview];
+        if (webView) {
+            return webView;
+        }
+    }
+    
+    return nil;
 }
 
 @end

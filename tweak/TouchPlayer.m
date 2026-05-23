@@ -373,7 +373,7 @@
     
     if (!handled) {
         NSLog(@"[TouchPlayer] Smart touch failed, using UIKit fallback");
-        [self injectIOHIDTouchAtLocation:location window:targetWindow event:event];
+        [self injectUIKitTouchAtLocation:location window:targetWindow event:event];
     }
 }
 
@@ -383,16 +383,27 @@
     UIApplication *app = [UIApplication sharedApplication];
     if (!app) return nil;
     
-    // 【修复4】遍历 windows.reverseObjectEnumerator
-    // 跳过 hidden window
-    // 仅允许 windowLevel == UIWindowLevelNormal
-    // 对每个 window 执行 hitTest 找到真正业务 window
+    // iOS 18+ 支持
+    if (@available(iOS 18.0, *)) {
+        UIWindow *foundWindow = [self findTargetWindowiOS18:location];
+        if (foundWindow) return foundWindow;
+    }
     
+    // 遍历 windows.reverseObjectEnumerator
+    // 跳过 hidden window
+    // 允许更多 window level
     NSEnumerator *windowEnumerator = [app.windows reverseObjectEnumerator];
     
     for (UIWindow *window in windowEnumerator) {
         if (window.hidden) continue;
-        if (window.windowLevel != UIWindowLevelNormal) continue;
+        
+        // iOS 18 可能使用不同的 window level
+        CGFloat level = window.windowLevel;
+        if (level != UIWindowLevelNormal && 
+            level != UIWindowLevelAlert && 
+            level != UIWindowLevelStatusBar) {
+            continue;
+        }
         
         // 使用 hitTest 验证 window 是否能接收事件
         CGPoint windowPoint = [window convertPoint:location fromWindow:nil];
@@ -401,18 +412,47 @@
         if (hit && hit.window == window) {
             NSLog(@"[TouchPlayer] Found target window: %@ (level:%.1f)", 
                   NSStringFromClass(window.class), window.windowLevel);
-            
-            // 【修复6】输出 window class
-            NSLog(@"[TouchPlayer] window class: %@", NSStringFromClass(window.class));
-            
             return window;
         }
     }
     
     // Fallback: 尝试使用 keyWindow
     UIWindow *keyWindow = [self getKeyWindow];
-    if (keyWindow && !keyWindow.hidden && keyWindow.windowLevel == UIWindowLevelNormal) {
+    if (keyWindow && !keyWindow.hidden) {
         return keyWindow;
+    }
+    
+    return nil;
+}
+
+- (UIWindow *)findTargetWindowiOS18:(CGPoint)location API_AVAILABLE(ios(18.0)) {
+    UIApplication *app = [UIApplication sharedApplication];
+    
+    // iOS 18+ 可能需要检查更多场景
+    for (UIScene *scene in app.connectedScenes) {
+        if (scene.activationState != UISceneActivationStateForegroundActive) continue;
+        
+        if ([scene isKindOfClass:[UIWindowScene class]]) {
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
+            
+            // 按 window level 排序查找
+            NSArray *sortedWindows = [windowScene.windows sortedArrayUsingComparator:^NSComparisonResult(UIWindow *w1, UIWindow *w2) {
+                return [@(w2.windowLevel) compare:@(w1.windowLevel)];
+            }];
+            
+            for (UIWindow *window in sortedWindows) {
+                if (window.hidden) continue;
+                
+                CGPoint windowPoint = [window convertPoint:location fromWindow:nil];
+                UIView *hit = [window hitTest:windowPoint withEvent:nil];
+                
+                if (hit && hit.window == window) {
+                    NSLog(@"[TouchPlayer] iOS 18+: Found target window: %@ (level:%.1f)", 
+                          NSStringFromClass(window.class), window.windowLevel);
+                    return window;
+                }
+            }
+        }
     }
     
     return nil;
@@ -618,6 +658,16 @@
     if ([view isKindOfClass:[UICollectionView class]]) return YES;
     if ([view isKindOfClass:[UIScrollView class]]) return YES;
     if ([view isKindOfClass:[WKWebView class]]) return YES;
+    if ([view isKindOfClass:[UIWebView class]]) return YES;
+    
+    // iOS 18+ 特殊视图类型
+    if (@available(iOS 18.0, *)) {
+        // iOS 18 可能引入的新视图类型
+        Class UIButtonConfigurationClass = NSClassFromString(@"UIButtonConfiguration");
+        if (UIButtonConfigurationClass && [view respondsToSelector:@selector(configuration)]) {
+            return YES;
+        }
+    }
     
     // 检查是否有 gesture recognizers
     if (view.gestureRecognizers && view.gestureRecognizers.count > 0) {

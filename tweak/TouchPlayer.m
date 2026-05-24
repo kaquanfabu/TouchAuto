@@ -18,7 +18,7 @@
 @property (nonatomic, strong) NSMutableArray<NSString *> *playbackLogs;
 
 // iOS 18 WebView 私有方法
-- (void)executeEnhancedWKWebViewJavaScript:(WKWebView *)webView atPoint:(CGPoint)point;
+- (void)executeEnhancedWKWebViewJavaScript:(WKWebView *)webView atPoint:(CGPoint)point webViewBounds:(CGRect)webViewBounds;
 - (NSString *)buildEnhancedClickScript:(CGPoint)point;
 - (void)executeBasicWKWebViewClick:(WKWebView *)webView atPoint:(CGPoint)point;
 
@@ -895,28 +895,74 @@
         return NO;
     }
     
-    NSLog(@"[TouchPlayer] WKWebView found");
+    NSLog(@"[TouchPlayer] WKWebView found: %@", webView);
+    NSLog(@"[TouchPlayer] Input location: (%.2f, %.2f)", location.x, location.y);
+    NSLog(@"[TouchPlayer] WKWebView frame: %@", NSStringFromCGRect(webView.frame));
     
-    CGPoint webViewLocation = [webView convertPoint:location fromView:nil];
-    NSLog(@"[TouchPlayer] WKWebView location: (%.2f, %.2f)", webViewLocation.x, webViewLocation.y);
+    // 获取 WebView 在 window 中的位置
+    CGRect webViewBoundsInWindow = [webView convertRect:webView.bounds toView:nil];
+    NSLog(@"[TouchPlayer] WKWebView bounds in window: %@", NSStringFromCGRect(webViewBoundsInWindow));
+    
+    // location 已经是 window 坐标系，直接使用
+    // 但 JavaScript 需要页面坐标，需要考虑 scroll offset
+    CGPoint pageLocation = location;
     
     // iOS 18 增强的 JavaScript 注入
-    [self executeEnhancedWKWebViewJavaScript:webView atPoint:webViewLocation];
+    [self executeEnhancedWKWebViewJavaScript:webView atPoint:pageLocation webViewBounds:webViewBoundsInWindow];
     
     return YES;
 }
 
-- (void)executeEnhancedWKWebViewJavaScript:(WKWebView *)webView atPoint:(CGPoint)point {
+- (void)executeEnhancedWKWebViewJavaScript:(WKWebView *)webView atPoint:(CGPoint)point webViewBounds:(CGRect)webViewBounds {
     // iOS 18 多策略 JS 注入
-    NSString *javascript = [self buildEnhancedClickScript:point];
+    // point 是 window 坐标系中的坐标
+    // JavaScript elementFromPoint 需要的是相对于视口的坐标
+    
+    // 如果 point 在 webView bounds 范围内，需要转换为 webView 内部坐标
+    CGPoint jsPoint = point;
+    
+    // 检查 point 是否在 webView bounds 内
+    if (CGRectContainsPoint(webViewBounds, point)) {
+        // 转换为 webView 内部坐标
+        jsPoint.x = point.x - webViewBounds.origin.x;
+        jsPoint.y = point.y - webViewBounds.origin.y;
+        
+        // 考虑 webView 的 scrollContentOffset
+        // WKWebView 的 contentOffset 是相对于内部内容的
+        UIScrollView *scrollView = webView;
+        if ([webView isKindOfClass:[UIScrollView class]]) {
+            scrollView = (UIScrollView *)webView;
+            jsPoint.x += scrollView.contentOffset.x;
+            jsPoint.y += scrollView.contentOffset.y;
+        }
+        
+        NSLog(@"[TouchPlayer] Adjusted JS point: (%.2f, %.2f) with scrollOffset", jsPoint.x, jsPoint.y);
+    }
+    
+    NSString *javascript = [self buildEnhancedClickScript:jsPoint];
     
     NSLog(@"[TouchPlayer] Executing enhanced JavaScript for iOS 18");
+    NSLog(@"[TouchPlayer] Final JavaScript point: (%.2f, %.2f)", jsPoint.x, jsPoint.y);
     
+    // 先检查页面是否可以接收点击
+    NSString *checkScript = [NSString stringWithFormat:
+        @"document.elementFromPoint(%f, %f) ? 'found' : 'not_found'", 
+        jsPoint.x, jsPoint.y];
+    
+    [webView evaluateJavaScript:checkScript completionHandler:^(id result, NSError *error) {
+        if (error) {
+            NSLog(@"[TouchPlayer] Check JavaScript error: %@", error);
+        } else {
+            NSLog(@"[TouchPlayer] Element at point (%f, %f): %@", jsPoint.x, jsPoint.y, result);
+        }
+    }];
+    
+    // 执行实际点击
     [webView evaluateJavaScript:javascript completionHandler:^(id result, NSError *error) {
         if (error) {
             NSLog(@"[TouchPlayer] JavaScript error: %@", error);
             // 降级到基础点击
-            [self executeBasicWKWebViewClick:webView atPoint:point];
+            [self executeBasicWKWebViewClick:webView atPoint:jsPoint];
         } else {
             NSLog(@"[TouchPlayer] JavaScript executed successfully, result: %@", result);
         }
@@ -1287,7 +1333,10 @@
     
     NSLog(@"[TouchPlayer] Executing JavaScript at point (%.2f, %.2f)", point.x, point.y);
     
-    [self executeEnhancedWKWebViewJavaScript:webView atPoint:point];
+    // 计算 webView 在 window 中的 bounds
+    CGRect webViewBounds = [webView convertRect:webView.bounds toView:nil];
+    
+    [self executeEnhancedWKWebViewJavaScript:webView atPoint:point webViewBounds:webViewBounds];
     return YES;
 }
 

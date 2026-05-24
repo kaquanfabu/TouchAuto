@@ -486,8 +486,29 @@
     }
     
     NSLog(@"[AdvancedFeatures] iOS 18 triggering WKWebView action");
+    NSLog(@"[AdvancedFeatures] Input location: (%.2f, %.2f)", location.x, location.y);
+    NSLog(@"[AdvancedFeatures] WKWebView frame: %@", NSStringFromCGRect(webView.frame));
     
-    CGPoint webViewLocation = [webView convertPoint:location fromView:view];
+    // 获取 WebView 在 window 中的位置
+    CGRect webViewBoundsInWindow = [webView convertRect:webView.bounds toView:nil];
+    NSLog(@"[AdvancedFeatures] WKWebView bounds in window: %@", NSStringFromCGRect(webViewBoundsInWindow));
+    
+    // 计算相对于 webView 内部的坐标
+    CGPoint webViewLocation = location;
+    if (CGRectContainsPoint(webViewBoundsInWindow, location)) {
+        webViewLocation.x = location.x - webViewBoundsInWindow.origin.x;
+        webViewLocation.y = location.y - webViewBoundsInWindow.origin.y;
+        
+        // 考虑 scroll offset
+        UIScrollView *scrollView = webView;
+        if ([webView isKindOfClass:[UIScrollView class]]) {
+            scrollView = (UIScrollView *)webView;
+            webViewLocation.x += scrollView.contentOffset.x;
+            webViewLocation.y += scrollView.contentOffset.y;
+        }
+        
+        NSLog(@"[AdvancedFeatures] Adjusted webView location: (%.2f, %.2f)", webViewLocation.x, webViewLocation.y);
+    }
     
     // iOS 18 使用增强的 JavaScript 点击策略
     NSString *javascript = [self buildAutoClickScript:webViewLocation];

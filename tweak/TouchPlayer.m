@@ -587,25 +587,35 @@
 }
 
 - (UIView *)findInteractiveSuperview:(UIView *)view {
-    if (!view || view.hidden || !view.userInteractionEnabled) {
-        return view;
+    if (!view) {
+        return nil;
     }
+    
+    NSLog(@"[TouchPlayer] findInteractiveSuperview starting with: %@", NSStringFromClass(view.class));
     
     // 如果当前视图是可交互的类型，直接返回
-    if ([self isInteractiveView:view]) {
+    if (!view.hidden && view.userInteractionEnabled && [self isInteractiveView:view]) {
+        NSLog(@"[TouchPlayer] Found interactive view directly: %@", NSStringFromClass(view.class));
         return view;
     }
     
-    // 向上查找父级
+    // 如果当前视图不可交互，跳过它继续向上查找
     UIView *superview = view.superview;
-    while (superview && !superview.hidden && superview.userInteractionEnabled) {
-        if ([self isInteractiveView:superview]) {
-            return superview;
+    while (superview) {
+        NSLog(@"[TouchPlayer] Checking superview: %@ (hidden:%d, userInteractionEnabled:%d)", 
+              NSStringFromClass(superview.class), superview.hidden, superview.userInteractionEnabled);
+        
+        if (!superview.hidden && superview.userInteractionEnabled) {
+            if ([self isInteractiveView:superview]) {
+                NSLog(@"[TouchPlayer] Found interactive superview: %@", NSStringFromClass(superview.class));
+                return superview;
+            }
         }
         superview = superview.superview;
     }
     
     // 找不到可交互的父级，返回原始视图
+    NSLog(@"[TouchPlayer] No interactive superview found, returning original view: %@", NSStringFromClass(view.class));
     return view;
 }
 
@@ -802,11 +812,23 @@
 #pragma mark - UIControl 处理
 
 - (BOOL)triggerUIControlAction:(UIControl *)control {
-    if (!control.enabled || control.hidden) {
+    if (!control) {
+        NSLog(@"[TouchPlayer] triggerUIControlAction: control is nil");
         return NO;
     }
     
-    NSLog(@"[TouchPlayer] Triggering UIControl: %@", NSStringFromClass(control.class));
+    if (!control.enabled) {
+        NSLog(@"[TouchPlayer] triggerUIControlAction: control is disabled");
+        return NO;
+    }
+    
+    if (control.hidden) {
+        NSLog(@"[TouchPlayer] triggerUIControlAction: control is hidden");
+        return NO;
+    }
+    
+    NSLog(@"[TouchPlayer] Triggering UIControl: %@ (enabled:%d, hidden:%d)", 
+          NSStringFromClass(control.class), control.enabled, control.hidden);
     
     // 对 UITextField/UISearchBar 进行特殊处理
     if ([control isKindOfClass:[UITextField class]] || 
@@ -815,6 +837,31 @@
         // 对于文本输入控件，只发送基本事件，不调用私有方法
         [control sendActionsForControlEvents:UIControlEventTouchDown];
         [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+        return YES;
+    }
+    
+    // 对 UIButton 进行特殊处理（确保导航栏按钮能正确响应）
+    if ([control isKindOfClass:[UIButton class]]) {
+        NSLog(@"[TouchPlayer] Special handling for UIButton");
+        UIButton *button = (UIButton *)control;
+        
+        // 发送完整的触摸事件序列
+        [control sendActionsForControlEvents:UIControlEventTouchDown];
+        [control sendActionsForControlEvents:UIControlEventTouchDownRepeat];
+        [control sendActionsForControlEvents:UIControlEventTouchDragInside];
+        [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+        
+        // 直接触发按钮的 action
+        for (id target in button.allTargets) {
+            for (NSString *action in [button actionsForTarget:target forControlEvent:UIControlEventTouchUpInside]) {
+                NSLog(@"[TouchPlayer] Triggering button action: %@ on target: %@", action, NSStringFromClass([target class]));
+                SEL selector = NSSelectorFromString(action);
+                if ([target respondsToSelector:selector]) {
+                    [target performSelector:selector withObject:button];
+                }
+            }
+        }
+        
         return YES;
     }
     

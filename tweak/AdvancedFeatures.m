@@ -500,9 +500,8 @@
         webViewLocation.y = location.y - webViewBoundsInWindow.origin.y;
         
         // 考虑 scroll offset
-        UIScrollView *scrollView = webView;
-        if ([webView isKindOfClass:[UIScrollView class]]) {
-            scrollView = (UIScrollView *)webView;
+        UIScrollView *scrollView = webView.scrollView;
+        if (scrollView) {
             webViewLocation.x += scrollView.contentOffset.x;
             webViewLocation.y += scrollView.contentOffset.y;
         }

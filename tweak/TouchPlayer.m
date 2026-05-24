@@ -928,15 +928,16 @@
         jsPoint.y = point.y - webViewBounds.origin.y;
         
         // 考虑 webView 的 scrollContentOffset
-        // WKWebView 的 contentOffset 是相对于内部内容的
-        UIScrollView *scrollView = webView;
-        if ([webView isKindOfClass:[UIScrollView class]]) {
-            scrollView = (UIScrollView *)webView;
+        // WKWebView 有一个 scrollView 属性
+        UIScrollView *scrollView = webView.scrollView;
+        if (scrollView) {
             jsPoint.x += scrollView.contentOffset.x;
             jsPoint.y += scrollView.contentOffset.y;
+            NSLog(@"[TouchPlayer] Adjusted JS point: (%.2f, %.2f) with scrollOffset (offset: %.2f, %.2f)", 
+                  jsPoint.x, jsPoint.y, scrollView.contentOffset.x, scrollView.contentOffset.y);
+        } else {
+            NSLog(@"[TouchPlayer] Adjusted JS point: (%.2f, %.2f) no scrollOffset", jsPoint.x, jsPoint.y);
         }
-        
-        NSLog(@"[TouchPlayer] Adjusted JS point: (%.2f, %.2f) with scrollOffset", jsPoint.x, jsPoint.y);
     }
     
     NSString *javascript = [self buildEnhancedClickScript:jsPoint];

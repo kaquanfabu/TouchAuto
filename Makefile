@@ -1,4 +1,4 @@
-ARCHS = armv7 armv7s arm64
+ARCHS = arm64
 TARGET = iphone:clang:16.5:13.0
 SDKVERSION = 16.5
 
